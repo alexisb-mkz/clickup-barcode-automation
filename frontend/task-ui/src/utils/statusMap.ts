@@ -11,7 +11,7 @@ export const STATUS_OPTIONS: StatusOption[] = [
   {
     label: 'Pending',
     uiValue: 'pending',
-    clickupValue: 'open',
+    clickupValue: 'to do',
     color: 'bg-gray-100 text-gray-700',
   },
   {

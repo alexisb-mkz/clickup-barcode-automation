@@ -15,7 +15,7 @@
   "functionTimeout": "00:10:00",
   "cors": {
     "allowedOrigins": [
-      "https://__SWA_HOSTNAME__.azurestaticapps.net",
+      "https://victorious-sea-03357510f.6.azurestaticapps.net",
       "http://localhost:5173",
       "http://localhost:3000"
     ],
