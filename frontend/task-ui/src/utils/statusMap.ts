@@ -17,7 +17,7 @@ export const STATUS_OPTIONS: StatusOption[] = [
   {
     label: 'In Progress',
     uiValue: 'in_progress',
-    clickupValue: 'in progress',
+    clickupValue: 'in progress/assigned',
     color: 'bg-yellow-100 text-yellow-800',
   },
   {
