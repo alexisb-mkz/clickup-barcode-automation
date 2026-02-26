@@ -19,7 +19,6 @@ export async function uploadAttachment(
   return data
 }
 
-export async function getPdfUrl(taskId: string): Promise<string> {
-  // Returns the PDF directly — open the URL in a new tab
+export function getPdfUrl(taskId: string): string {
   return `${import.meta.env.VITE_FUNCTION_APP_URL}/api/task/${taskId}/pdf`
 }
