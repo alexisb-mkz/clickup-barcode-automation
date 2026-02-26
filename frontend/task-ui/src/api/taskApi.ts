@@ -6,6 +6,11 @@ export async function getTask(taskId: string): Promise<Task> {
   return data
 }
 
+export async function translateTexts(texts: string[]): Promise<string[]> {
+  const { data } = await apiClient.post<{ translations: string[] }>('/translate', { texts })
+  return data.translations
+}
+
 export async function updateTask(taskId: string, payload: TaskUpdatePayload): Promise<Partial<Task>> {
   const { data } = await apiClient.put<Partial<Task>>(`/task/${taskId}`, payload)
   return data

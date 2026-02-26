@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { isoToDatetimeLocal, formatDisplayDate } from '../utils/dateUtils'
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
 
 interface Props {
   value: string
@@ -7,6 +9,7 @@ interface Props {
 }
 
 export default function ArrivalDatePicker({ value, onSave }: Props) {
+  const { lang } = useLanguage()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(isoToDatetimeLocal(value))
 
@@ -19,7 +22,7 @@ export default function ArrivalDatePicker({ value, onSave }: Props) {
 
   return (
     <div className="px-4 py-3">
-      <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1">Arrival Date & Time</p>
+      <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1">{t('arrivalDateTime', lang)}</p>
       {editing ? (
         <input
           type="datetime-local"
@@ -38,7 +41,7 @@ export default function ArrivalDatePicker({ value, onSave }: Props) {
           }}
         >
           <p className="text-sm text-gray-800">
-            {value ? formatDisplayDate(value) : <span className="text-gray-400">Tap to set arrival time</span>}
+            {value ? formatDisplayDate(value) : <span className="text-gray-400">{t('tapToSetArrival', lang)}</span>}
           </p>
         </button>
       )}

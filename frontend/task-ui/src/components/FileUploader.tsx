@@ -1,4 +1,6 @@
 import { useRef } from 'react'
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
 
 interface Props {
   onUpload: (file: File) => Promise<unknown>
@@ -7,6 +9,7 @@ interface Props {
 }
 
 export default function FileUploader({ onUpload, uploading, uploadError }: Props) {
+  const { lang } = useLanguage()
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleFiles(files: FileList | null) {
@@ -32,13 +35,13 @@ export default function FileUploader({ onUpload, uploading, uploadError }: Props
         {uploading ? (
           <div className="flex flex-col items-center gap-2">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-gray-500">Uploading...</p>
+            <p className="text-sm text-gray-500">{t('uploading', lang)}</p>
           </div>
         ) : (
           <>
             <p className="text-3xl mb-1">📎</p>
-            <p className="text-sm font-medium text-gray-700">Tap to attach a photo or file</p>
-            <p className="text-xs text-gray-400 mt-0.5">or drag and drop</p>
+            <p className="text-sm font-medium text-gray-700">{t('tapToAttach', lang)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t('dragDrop', lang)}</p>
           </>
         )}
       </div>

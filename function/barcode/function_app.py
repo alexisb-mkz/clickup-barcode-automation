@@ -60,7 +60,13 @@ def _extract_task_fields(data: dict) -> dict:
             val = cf.get("value_richtext")
             action_items_raw = val if isinstance(val, str) else (json.dumps(val) if val else "")
         elif name == "Translate":
-            translate_flag = cf.get("value", "false").lower() == "true"
+            val = cf.get("value")
+            if isinstance(val, bool):
+                translate_flag = val
+            elif isinstance(val, str):
+                translate_flag = val.lower() == "true"
+            else:
+                translate_flag = False
 
     status_obj = data.get("status", {})
     task_status = status_obj.get("status", "") if isinstance(status_obj, dict) else ""
@@ -470,7 +476,8 @@ def _handle_task_put(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
         clickup_payload["status"] = body["clickup_status"]
     if body.get("arrival_date_iso"):
         try:
-            dt = datetime.datetime.fromisoformat(body["arrival_date_iso"])
+            iso_str = body["arrival_date_iso"].replace('Z', '+00:00')
+            dt = datetime.datetime.fromisoformat(iso_str)
             clickup_payload["start_date"] = int(dt.timestamp() * 1000)
             clickup_payload["start_date_time"] = True
         except ValueError:
@@ -548,6 +555,31 @@ def http_trigger_task_attachment(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Attachment upload failed for task {task_id}: {e}")
         return func.HttpResponse(f"Upload failed: {e}", status_code=500)
+
+
+'''
+Technician UI — PDF Download
+'''
+'''
+Technician UI — Translation Proxy
+'''
+@app.route(route="translate", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def http_trigger_translate(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON body", status_code=400)
+
+    texts = body.get('texts', [])
+    if not isinstance(texts, list):
+        return func.HttpResponse("'texts' must be an array", status_code=400)
+
+    translations = [translate_text(t) if t else '' for t in texts]
+    return func.HttpResponse(
+        json.dumps({'translations': translations}),
+        mimetype='application/json',
+        status_code=200
+    )
 
 
 '''

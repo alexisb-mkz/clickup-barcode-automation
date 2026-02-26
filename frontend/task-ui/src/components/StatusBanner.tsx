@@ -1,3 +1,6 @@
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
+
 interface Props {
   saving: boolean
   saveSuccess: boolean
@@ -5,6 +8,8 @@ interface Props {
 }
 
 export default function StatusBanner({ saving, saveSuccess, saveError }: Props) {
+  const { lang } = useLanguage()
+
   if (!saving && !saveSuccess && !saveError) return null
 
   return (
@@ -17,7 +22,7 @@ export default function StatusBanner({ saving, saveSuccess, saveError }: Props) 
           : 'bg-blue-500'
       }`}
     >
-      {saveError ? `Error: ${saveError}` : saveSuccess ? '✓ Saved' : 'Saving...'}
+      {saveError ? `${t('errorPrefix', lang)}: ${saveError}` : saveSuccess ? t('saved', lang) : t('saving', lang)}
     </div>
   )
 }

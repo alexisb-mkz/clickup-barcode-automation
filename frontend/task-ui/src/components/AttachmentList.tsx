@@ -1,3 +1,5 @@
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
 import type { Attachment } from '../types/task'
 
 interface Props {
@@ -5,12 +7,14 @@ interface Props {
 }
 
 export default function AttachmentList({ attachments }: Props) {
+  const { lang } = useLanguage()
+
   if (!attachments || attachments.length === 0) return null
 
   return (
     <div className="bg-white rounded-xl shadow p-4">
       <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-3">
-        Attachments ({attachments.length})
+        {t('attachments', lang)} ({attachments.length})
       </p>
       <div className="grid grid-cols-3 gap-2">
         {attachments.map((a) => (

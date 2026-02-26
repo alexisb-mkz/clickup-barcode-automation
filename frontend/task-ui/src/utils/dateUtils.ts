@@ -1,7 +1,14 @@
 export function isoToDatetimeLocal(iso: string): string {
   if (!iso) return ''
-  // Strip timezone for datetime-local input (expects "YYYY-MM-DDTHH:MM")
-  return iso.slice(0, 16)
+  // datetime-local inputs expect "YYYY-MM-DDTHH:MM" in LOCAL time.
+  // Slicing the UTC ISO string directly would show the wrong time in non-UTC timezones.
+  const d = new Date(iso)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`
 }
 
 export function datetimeLocalToIso(value: string): string {

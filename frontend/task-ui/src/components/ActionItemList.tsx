@@ -1,3 +1,5 @@
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
 import type { ActionItem } from '../types/task'
 
 interface Props {
@@ -5,11 +7,13 @@ interface Props {
 }
 
 export default function ActionItemList({ items }: Props) {
+  const { lang } = useLanguage()
+
   if (!items || items.length === 0) return null
 
   return (
     <div className="bg-white rounded-xl shadow p-4">
-      <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-2">Action Items</p>
+      <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-2">{t('actionItems', lang)}</p>
       <ul className="space-y-1">
         {items.map((item, i) => (
           <li key={i} className="flex items-start gap-2 text-sm text-gray-700">

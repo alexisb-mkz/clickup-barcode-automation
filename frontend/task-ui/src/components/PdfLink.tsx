@@ -1,10 +1,14 @@
 import { getPdfUrl } from '../api/taskApi'
+import { useLanguage } from '../contexts/LanguageContext'
+import { t } from '../utils/i18n'
 
 interface Props {
   taskId: string
 }
 
 export default function PdfLink({ taskId }: Props) {
+  const { lang } = useLanguage()
+
   function handleClick() {
     const url = getPdfUrl(taskId)
     window.open(url, '_blank', 'noopener,noreferrer')
@@ -17,8 +21,8 @@ export default function PdfLink({ taskId }: Props) {
     >
       <span className="text-2xl">📄</span>
       <div>
-        <p className="text-sm font-medium text-blue-600">View Work Order PDF</p>
-        <p className="text-xs text-gray-400">Opens in new tab</p>
+        <p className="text-sm font-medium text-blue-600">{t('viewWorkOrderPdf', lang)}</p>
+        <p className="text-xs text-gray-400">{t('opensInNewTab', lang)}</p>
       </div>
     </button>
   )
