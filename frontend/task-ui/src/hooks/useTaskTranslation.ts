@@ -5,7 +5,7 @@ import { translateTexts } from '../api/taskApi'
 
 interface TranslationCache {
   cacheKey: string
-  translated: Pick<Task, 'task_name' | 'issue_description' | 'action_items'>
+  translated: Pick<Task, 'task_name' | 'issue_description' | 'tech_notes' | 'action_items'>
 }
 
 export function useTaskTranslation(task: Task | null, lang: Lang) {
@@ -26,22 +26,23 @@ export function useTaskTranslation(task: Task | null, lang: Lang) {
       return
     }
 
-    // Build the flat list of strings to translate: [task_name, issue_description, ...item texts]
+    // Build the flat list of strings to translate: [task_name, issue_description, tech_notes, ...item texts]
     const actionTexts = task.action_items.map((item) => item.text)
-    const allTexts = [task.task_name, task.issue_description, ...actionTexts]
+    const allTexts = [task.task_name, task.issue_description, task.tech_notes, ...actionTexts]
 
     setTranslating(true)
     translateTexts(allTexts)
       .then((results) => {
-        const [translatedName, translatedIssue, ...translatedActionTexts] = results
+        const [translatedName, translatedIssue, translatedTechNotes, ...translatedActionTexts] = results
         const translatedItems = task.action_items.map((item, i) => ({
           ...item,
           text: translatedActionTexts[i] ?? item.text,
         }))
 
-        const translated: Pick<Task, 'task_name' | 'issue_description' | 'action_items'> = {
+        const translated: Pick<Task, 'task_name' | 'issue_description' | 'tech_notes' | 'action_items'> = {
           task_name: translatedName ?? task.task_name,
           issue_description: translatedIssue ?? task.issue_description,
+          tech_notes: translatedTechNotes ?? task.tech_notes,
           action_items: translatedItems,
         }
 

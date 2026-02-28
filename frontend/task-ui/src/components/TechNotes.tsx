@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t } from '../utils/i18n'
 
@@ -10,8 +10,22 @@ interface Props {
 export default function TechNotes({ value, onSave }: Props) {
   const { lang } = useLanguage()
   const [draft, setDraft] = useState(value)
+  const focusedRef = useRef(false)
+
+  // Sync draft when value changes externally (e.g. translation arrives or lang toggles),
+  // but only if the user isn't actively editing.
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(value)
+    }
+  }, [value])
+
+  function handleFocus() {
+    focusedRef.current = true
+  }
 
   function handleBlur() {
+    focusedRef.current = false
     if (draft !== value) {
       onSave(draft)
     }
@@ -26,6 +40,7 @@ export default function TechNotes({ value, onSave }: Props) {
         placeholder={t('notesPlaceholder', lang)}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        onFocus={handleFocus}
         onBlur={handleBlur}
       />
       <p className="text-xs text-gray-400 mt-1">{t('autoSaved', lang)}</p>

@@ -6,11 +6,9 @@ import { useAttachmentUpload } from '../hooks/useAttachmentUpload'
 import { useTaskTranslation } from '../hooks/useTaskTranslation'
 import { useLanguage, hasStoredLangPreference } from '../contexts/LanguageContext'
 import { t } from '../utils/i18n'
-import { msTimestampToDate } from '../utils/dateUtils'
 import LoadingSpinner from '../components/LoadingSpinner'
 import TaskHeader from '../components/TaskHeader'
 import ActionItemList from '../components/ActionItemList'
-import ArrivalDatePicker from '../components/ArrivalDatePicker'
 import StatusDropdown from '../components/StatusDropdown'
 import TechNotes from '../components/TechNotes'
 import FileUploader from '../components/FileUploader'
@@ -88,9 +86,6 @@ export default function TaskPage() {
           <ScheduledWindow
             startDateMs={task.start_date_ms}
             bufferHours={task.start_buffer_hours}
-          />
-          <ArrivalDatePicker
-            value={task.arrival_date_iso || (msTimestampToDate(task.start_date_ms)?.toISOString() ?? '')}
             onSave={(iso) => save({ arrival_date_iso: iso })}
           />
           <StatusDropdown
@@ -100,7 +95,7 @@ export default function TaskPage() {
             }
           />
           <TechNotes
-            value={task.tech_notes}
+            value={displayTask.tech_notes}
             onSave={(notes) => save({ tech_notes: notes })}
           />
         </div>

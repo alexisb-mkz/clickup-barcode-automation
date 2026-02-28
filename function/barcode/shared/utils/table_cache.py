@@ -37,6 +37,7 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str) -> Non
     action_items_raw = ""
     start_buffer_hours = 0
     translate_flag = False
+    contractor_notes_field_id = None
 
     for cf in task_data.get("custom_fields", []):
         name = cf.get("name", "")
@@ -51,6 +52,8 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str) -> Non
             action_items_raw = val if isinstance(val, str) else (json.dumps(val) if val else "")
         elif name == "Translate":
             translate_flag = cf.get("value", "false").lower() == "true"
+        elif name.lower() == "contractor notes":
+            contractor_notes_field_id = cf.get("id")
 
     status_obj = task_data.get("status", {})
     task_status = status_obj.get("status", "") if isinstance(status_obj, dict) else ""
@@ -69,6 +72,8 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str) -> Non
         "pdf_blob_url": pdf_blob_url,
         "snapshot_written_at": datetime.now(timezone.utc).isoformat(),
     }
+    if contractor_notes_field_id:
+        entity["contractor_notes_field_id"] = contractor_notes_field_id
 
     client = _get_table_client()
     client.upsert_entity(entity=entity, mode=UpdateMode.MERGE)

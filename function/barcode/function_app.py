@@ -47,6 +47,8 @@ def _extract_task_fields(data: dict) -> dict:
     action_items_raw = ""
     start_buffer_hours = 0
     translate_flag = False
+    contractor_notes = ""
+    contractor_notes_field_id = None
 
     for cf in data.get("custom_fields", []):
         name = cf.get("name", "")
@@ -67,6 +69,9 @@ def _extract_task_fields(data: dict) -> dict:
                 translate_flag = val.lower() == "true"
             else:
                 translate_flag = False
+        elif name.lower() == "contractor notes":
+            contractor_notes = cf.get("value") or ""
+            contractor_notes_field_id = cf.get("id")
 
     status_obj = data.get("status", {})
     task_status = status_obj.get("status", "") if isinstance(status_obj, dict) else ""
@@ -94,6 +99,8 @@ def _extract_task_fields(data: dict) -> dict:
         "task_status": task_status,
         "translate_flag": translate_flag,
         "attachments": attachments,
+        "contractor_notes": contractor_notes,
+        "contractor_notes_field_id": contractor_notes_field_id,
     }
 
 
@@ -438,7 +445,7 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
         tech_fields = {
             "arrival_date_iso": entity.get("arrival_date_iso") or "",
             "completion_status": entity.get("completion_status") or "pending",
-            "tech_notes": entity.get("tech_notes") or "",
+            "tech_notes": entity.get("tech_notes") or fields.get("contractor_notes", ""),
             "last_ui_update_at": entity.get("last_ui_update_at"),
             "snapshot_written_at": entity.get("snapshot_written_at"),
         }
@@ -446,13 +453,15 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
         tech_fields = {
             "arrival_date_iso": "",
             "completion_status": "pending",
-            "tech_notes": "",
+            "tech_notes": fields.get("contractor_notes", ""),
             "last_ui_update_at": None,
             "snapshot_written_at": None,
         }
 
     response_data = {**fields, **tech_fields, "cache_stale": cache_stale}
     response_data.pop("action_items_raw", None)
+    response_data.pop("contractor_notes", None)
+    response_data.pop("contractor_notes_field_id", None)
 
     return func.HttpResponse(
         json.dumps(response_data),
@@ -503,9 +512,59 @@ def _handle_task_put(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
         logging.error(f"Table Storage update failed: {e}")
         return func.HttpResponse(f"Failed to save changes: {e}", status_code=500)
 
+    # Sync tech_notes to ClickUp "Contractor Notes" custom field (non-fatal)
+    if "tech_notes" in body:
+        try:
+            entity = read_task_snapshot(task_id)
+            field_id = entity.get("contractor_notes_field_id") if entity else None
+
+            # Cache miss — fetch the field ID live from ClickUp
+            if not field_id:
+                logging.info(f"contractor_notes_field_id not cached for task {task_id}, fetching from ClickUp")
+                task_resp = requests.get(
+                    f"https://api.clickup.com/api/v2/task/{task_id}",
+                    headers=cu_headers
+                )
+                if task_resp.status_code == 200:
+                    task_data = task_resp.json()
+                    for cf in task_data.get("custom_fields", []):
+                        if cf.get("name", "").lower() == "contractor notes":
+                            field_id = cf.get("id")
+                            logging.info(f"Found contractor_notes_field_id: {field_id}")
+                            break
+                else:
+                    logging.warning(f"ClickUp task fetch for field ID failed: {task_resp.status_code}")
+
+            if field_id:
+                notes_resp = requests.post(
+                    f"https://api.clickup.com/api/v2/task/{task_id}/field/{field_id}",
+                    json={"value": body["tech_notes"]},
+                    headers=cu_headers
+                )
+                if notes_resp.status_code not in (200, 201):
+                    logging.warning(f"ClickUp contractor notes sync failed: {notes_resp.status_code} {notes_resp.text}")
+                else:
+                    logging.info(f"ClickUp contractor notes synced for task {task_id}")
+            else:
+                logging.warning(f"No 'Contractor Notes' custom field found for task {task_id}, skipping ClickUp sync")
+        except Exception as e:
+            logging.warning(f"ClickUp contractor notes sync exception (non-fatal): {e}")
+
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    response_body = {"task_id": task_id, **tech_updates, "last_ui_update_at": now}
+
+    # Return start_date_ms so the frontend can update ScheduledWindow immediately
+    # without waiting for the next GET to reflect the ClickUp write.
+    if "arrival_date_iso" in tech_updates:
+        try:
+            iso_str = tech_updates["arrival_date_iso"].replace('Z', '+00:00')
+            dt = datetime.datetime.fromisoformat(iso_str)
+            response_body["start_date_ms"] = str(int(dt.timestamp() * 1000))
+        except Exception:
+            pass
+
     return func.HttpResponse(
-        json.dumps({"task_id": task_id, **tech_updates, "last_ui_update_at": now}),
+        json.dumps(response_body),
         mimetype="application/json",
         status_code=200
     )
