@@ -16,9 +16,10 @@ export function datetimeLocalToIso(value: string): string {
   return new Date(value).toISOString()
 }
 
-export function formatDisplayDate(iso: string): string {
+export function formatDisplayDate(iso: string, lang: 'en' | 'zh' = 'en'): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-US', {
+  const locale = lang === 'zh' ? 'zh-CN' : 'en-US'
+  return new Date(iso).toLocaleString(locale, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',

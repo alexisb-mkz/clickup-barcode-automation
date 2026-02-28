@@ -41,7 +41,7 @@ export default function ArrivalDatePicker({ value, onSave }: Props) {
           }}
         >
           <p className="text-sm text-gray-800">
-            {value ? formatDisplayDate(value) : <span className="text-gray-400">{t('tapToSetArrival', lang)}</span>}
+            {value ? formatDisplayDate(value, lang) : <span className="text-gray-400">{t('tapToSetArrival', lang)}</span>}
           </p>
         </button>
       )}

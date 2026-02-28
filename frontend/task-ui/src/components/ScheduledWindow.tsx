@@ -28,11 +28,11 @@ export default function ScheduledWindow({ startDateMs, bufferHours }: Props) {
         )}
       </p>
       <p className="text-sm text-gray-800">
-        {formatDisplayDate(startDate.toISOString())}
+        {formatDisplayDate(startDate.toISOString(), lang)}
         {endDate && (
           <>
             <span className="mx-1.5 text-gray-400">{t('to', lang)}</span>
-            {formatDisplayDate(endDate.toISOString())}
+            {formatDisplayDate(endDate.toISOString(), lang)}
           </>
         )}
       </p>
