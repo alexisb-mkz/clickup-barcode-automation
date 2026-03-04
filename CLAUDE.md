@@ -56,7 +56,7 @@ QR code on PDF contains:
 
 SWA /task/{id}
   → GET /api/task/{id}     (ClickUp live data + TableCache tech fields merged)
-  → PUT /api/task/{id}     (updates ClickUp status/start_date + TableCache tech fields)
+  → PUT /api/task/{id}     (updates ClickUp status/start_date/contractor_notes + TableCache tech fields)
   → POST /api/task/{id}/attachment  (base64 → ClickUp attachment API)
   → GET /api/task/{id}/pdf          (stream from Blob Storage)
   → POST /api/translate             (Azure Translator proxy)
@@ -66,16 +66,35 @@ SWA /task/{id}
 
 The `GET /api/task/{id}` response merges two sources:
 - **ClickUp** (always fetched first): `task_name`, `property_address`, `issue_description`, `action_items`, `start_date_ms`, `start_buffer_hours`, `task_status`, `translate_flag`, `attachments`
-- **Table Storage** (tech-writable, MERGE upsert never overwrites these): `arrival_date_iso`, `completion_status`, `tech_notes`, `last_ui_update_at`
+- **Table Storage** (tech-writable, MERGE upsert never overwrites ClickUp fields): `arrival_date_iso`, `completion_status`, `tech_notes`, `last_ui_update_at`
+
+`tech_notes` initialisation order: Table Storage value → fallback to ClickUp "Contractor Notes" custom field value if Table Storage has none. This means the first time a technician visits a task, any notes already in ClickUp are pre-populated.
+
+`contractor_notes` and `contractor_notes_field_id` are extracted from ClickUp on every GET but are **never** sent to the frontend — they are internal fields stripped from the response before it is returned.
 
 If ClickUp is unreachable, the function falls back to the cached Table Storage snapshot (`cache_stale: true` in response).
 
 ### Table Storage MERGE Pattern
 
 All writes use `UpdateMode.MERGE` (`upsert_entity`). This means:
-- `write_task_snapshot()` refreshes ClickUp-sourced fields without touching tech fields
+- `write_task_snapshot()` refreshes ClickUp-sourced fields without touching tech fields; also caches `contractor_notes_field_id` so the PUT handler can sync notes back to ClickUp without an extra GET
 - `update_tech_fields()` only touches the three tech-writable fields + `last_ui_update_at`
 - Creating a PDF for an already-active task preserves the technician's saved data
+
+### PUT Response
+
+`PUT /api/task/{id}` returns the saved tech fields plus `last_ui_update_at`. When `arrival_date_iso` is in the payload, the response also includes `start_date_ms` (the millisecond equivalent) so the frontend can update `ScheduledWindow` optimistically without waiting for the next GET.
+
+### ClickUp Custom Field Sync
+
+When `tech_notes` is saved via PUT, the backend also syncs the value to the ClickUp "Contractor Notes" custom field (case-insensitive name match):
+
+1. Read `contractor_notes_field_id` from the Table Storage snapshot (written by `write_task_snapshot` on the preceding GET)
+2. If not cached (e.g. first save before a GET has run), fall back to a live ClickUp GET to find the field ID
+3. `POST /api/v2/task/{task_id}/field/{field_id}` with `{"value": notes_text}`
+4. Failure is non-fatal — logs a warning, always returns 200 so the Table Storage save is never blocked
+
+Similarly, `arrival_date_iso` always syncs to ClickUp's top-level `start_date` field on every PUT.
 
 ### Auth Model
 
@@ -90,7 +109,7 @@ All writes use `UpdateMode.MERGE` (`upsert_entity`). This means:
 - `templates.py` — `MaintenanceRequestTemplate` (builds header, issue section, action items, image grid)
 - `components.py` — `ClickableQRCode` (qrcode + ReportLab Flowable) and `ScaledImageGrid`
 
-`translate_fn` is threaded through all build methods as an optional callable — pass `translate_text` when `translate_flag` is true, else `None` (identity lambda fallback).
+`translate_fn` is threaded through all build methods as an optional callable — pass `translate_text` when `translate_flag` is true, else `None` (identity lambda fallback). **`property_address` must not be passed through `translate_fn`** — addresses are proper location identifiers and should never be translated.
 
 ### Frontend Language System
 
@@ -99,7 +118,19 @@ All writes use `UpdateMode.MERGE` (`upsert_entity`). This means:
 - `setLangAuto()` — auto-detection from `task.translate_flag`, does **not** write to `localStorage`
 - `hasStoredLangPreference()` — guards against overwriting an explicit user choice
 
-Translation is lazy-fetched via `useTaskTranslation` hook calling `POST /api/translate`, with in-memory cache keyed on `task_id + snapshot_written_at`. All UI strings use the `t(key, lang)` helper from `src/utils/i18n.ts`.
+Translation is lazy-fetched via `useTaskTranslation` hook calling `POST /api/translate`. The hook translates `task_name`, `issue_description`, `tech_notes`, and all `action_items` text in a single batched request. `property_address` is intentionally excluded. Results are cached in-memory keyed on `task_id + snapshot_written_at`.
+
+All UI strings use the `t(key, lang)` helper from `src/utils/i18n.ts`.
+
+Date formatting uses `formatDisplayDate(iso, lang)` in `src/utils/dateUtils.ts`, which passes `'en-US'` or `'zh-CN'` to `toLocaleString` — `Intl.DateTimeFormat` handles locale-appropriate month names, weekday names, and time format automatically.
+
+### Scheduled Window / Date Picker
+
+`ScheduledWindow` (`src/components/ScheduledWindow.tsx`) is both the display and the editable date picker — there is no separate `ArrivalDatePicker` component. The start date is rendered as a styled button; clicking opens a `datetime-local` input inline. The end date (`start + buffer`) recalculates live from the draft value while editing.
+
+Source of truth is always `task.start_date_ms` (from ClickUp). After saving, the PUT response returns `start_date_ms` so the component updates optimistically without a page reload.
+
+`TechNotes` (`src/components/TechNotes.tsx`) syncs its draft to the `value` prop whenever the prop changes externally (e.g. translation arrives or language toggles), guarded by a `focusedRef` so an in-progress edit is never clobbered.
 
 ### ClickUp Status Mapping
 

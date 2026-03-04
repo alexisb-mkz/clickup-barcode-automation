@@ -207,7 +207,7 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
                     start_buffer = int(float(cf.get("value", 0) or 0))
 
                 if cf["name"] == "Task Action Items":
-                    action_items = cf["value_richtext"]
+                    action_items = cf.get("value_richtext")
 
                 if cf["name"] == "Translate":
                     translate_flag = cf.get("value", "false").lower() == "true"
