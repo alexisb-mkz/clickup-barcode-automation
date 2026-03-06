@@ -27,3 +27,8 @@ export async function uploadAttachment(
 export function getPdfUrl(taskId: string): string {
   return `${import.meta.env.VITE_FUNCTION_APP_URL}/api/task/${taskId}/pdf`
 }
+
+export async function regeneratePdf(taskId: string): Promise<{ ok: boolean; snapshot_written_at: string }> {
+  const { data } = await apiClient.post(`/task/${taskId}/regenerate-pdf`)
+  return data
+}

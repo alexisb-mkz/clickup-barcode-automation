@@ -29,9 +29,18 @@ const strings = {
   to:                { en: 'to',                                                        zh: '至' },
   hrBuffer:          { en: 'hr buffer',                                                 zh: '小时缓冲' },
   translating:       { en: 'Translating...',                                            zh: '翻译中...' },
+  pdfMayBeOutdated:       { en: 'PDF may be outdated. Changed since last generation:',  zh: 'PDF 可能已过期。上次生成后发生变更：' },
+  regeneratePdf:          { en: 'Regenerate PDF',                                       zh: '重新生成 PDF' },
+  regenerating:           { en: 'Regenerating...',                                      zh: '重新生成中...' },
+  pdfRegenerated:         { en: '✓ PDF regenerated and email resent',                   zh: '✓ PDF 已重新生成并重新发送邮件' },
+  fieldTaskName:          { en: 'Task Name',                                            zh: '任务名称' },
+  fieldPropertyAddress:   { en: 'Property Address',                                     zh: '物业地址' },
+  fieldIssueDescription:  { en: 'Issue Description',                                    zh: '问题描述' },
+  fieldActionItems:       { en: 'Action Items',                                         zh: '待办事项' },
+  fieldScheduledDate:     { en: 'Scheduled Date',                                       zh: '预约日期' },
 } as const
 
-type StringKey = keyof typeof strings
+export type StringKey = keyof typeof strings
 
 export function t(key: StringKey, lang: Lang): string {
   return strings[key][lang]

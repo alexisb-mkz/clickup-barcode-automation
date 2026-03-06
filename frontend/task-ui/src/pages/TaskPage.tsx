@@ -80,7 +80,15 @@ export default function TaskPage() {
 
         <TaskHeader task={displayTask} />
         <ActionItemList items={displayTask.action_items} />
-        <PdfLink taskId={taskId!} />
+        <PdfLink
+          taskId={taskId!}
+          dateUpdatedMs={task.date_updated}
+          snapshotWrittenAt={task.snapshot_written_at}
+          pdfStaleFields={task.pdf_stale_fields ?? []}
+          onRegenerated={(snapshotWrittenAt) =>
+            setTask((prev) => prev ? { ...prev, snapshot_written_at: snapshotWrittenAt, pdf_stale_fields: [] } : prev)
+          }
+        />
 
         <div className="bg-white rounded-xl shadow divide-y divide-gray-100">
           <ScheduledWindow

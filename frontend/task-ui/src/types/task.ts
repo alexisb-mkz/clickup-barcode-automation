@@ -27,6 +27,8 @@ export interface Task {
   tech_notes: string
   last_ui_update_at: string | null
   snapshot_written_at: string | null
+  date_updated: string
+  pdf_stale_fields: string[]
   cache_stale: boolean
 }
 

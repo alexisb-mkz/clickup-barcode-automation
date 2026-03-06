@@ -12,7 +12,7 @@ from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
 from shared.pdf.generator import MaintenancePDFGenerator
 from shared.utils.helpers import download_image_bytes, translate_text, parse_quill_delta
-from shared.utils.table_cache import write_task_snapshot, read_task_snapshot, update_tech_fields
+from shared.utils.table_cache import write_task_snapshot, read_task_snapshot, update_tech_fields, seed_pdf_snapshot_fields
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -101,6 +101,7 @@ def _extract_task_fields(data: dict) -> dict:
         "attachments": attachments,
         "contractor_notes": contractor_notes,
         "contractor_notes_field_id": contractor_notes_field_id,
+        "date_updated": str(data.get("date_updated") or ""),
     }
 
 
@@ -416,10 +417,11 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
 
     if clickup_data:
         fields = _extract_task_fields(clickup_data)
-        # Refresh Table Storage snapshot — MERGE preserves existing tech fields
+        # Refresh Table Storage snapshot — MERGE preserves existing tech fields.
+        # update_snapshot_time=False so snapshot_written_at only advances on PDF generation.
         try:
             pdf_blob_url = f"https://faclickupbarcodeautomati.blob.core.windows.net/content/{task_id}.pdf"
-            write_task_snapshot(task_id, clickup_data, pdf_blob_url)
+            write_task_snapshot(task_id, clickup_data, pdf_blob_url, update_snapshot_time=False)
         except Exception as e:
             logging.warning(f"Table Storage snapshot refresh failed (non-fatal): {e}")
     elif entity:
@@ -462,7 +464,33 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
             "snapshot_written_at": None,
         }
 
-    response_data = {**fields, **tech_fields, "cache_stale": cache_stale}
+    # Diff current ClickUp values against the values frozen at PDF generation time.
+    # Only runs when a PDF has been generated (snapshot_written_at is set).
+    pdf_stale_fields = []
+    if entity and entity.get("snapshot_written_at") and not cache_stale:
+        pdf_baseline_missing = entity.get("pdf_task_name") is None
+
+        if pdf_baseline_missing:
+            # Task was generated before the field-diff feature was deployed.
+            # Seed pdf_* fields now so future changes are detected from this point forward.
+            try:
+                seed_pdf_snapshot_fields(task_id, fields)
+            except Exception as seed_err:
+                logging.warning(f"pdf_* field seeding failed (non-fatal): {seed_err}")
+        else:
+            comparisons = [
+                ("task_name",        "pdf_task_name",        "task_name"),
+                ("property_address", "pdf_property_address", "property_address"),
+                ("issue_description","pdf_issue_description","issue_description"),
+                ("action_items_raw", "pdf_action_items_raw", "action_items"),
+                ("start_date_ms",    "pdf_start_date_ms",    "scheduled_date"),
+            ]
+            for current_key, pdf_key, label in comparisons:
+                pdf_val = entity.get(pdf_key)
+                if pdf_val is not None and str(fields.get(current_key, "")) != str(pdf_val):
+                    pdf_stale_fields.append(label)
+
+    response_data = {**fields, **tech_fields, "cache_stale": cache_stale, "pdf_stale_fields": pdf_stale_fields}
     response_data.pop("action_items_raw", None)
     response_data.pop("contractor_notes", None)
     response_data.pop("contractor_notes_field_id", None)
@@ -675,3 +703,108 @@ def http_trigger_task_pdf(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             status_code=404
         )
+
+
+'''
+Technician UI — Regenerate PDF
+'''
+@app.route(route="task/{task_id}/regenerate-pdf", methods=["POST"], auth_level=func.AuthLevel.ANONYMOUS)
+def http_trigger_regenerate_pdf(req: func.HttpRequest) -> func.HttpResponse:
+    task_id = req.route_params.get("task_id")
+    if not task_id:
+        return func.HttpResponse("Missing task_id", status_code=400)
+
+    token = _get_clickup_token()
+    cu_headers = {'accept': 'application/json', 'content-type': 'application/json', 'Authorization': token}
+
+    # Fetch task from ClickUp
+    try:
+        resp = requests.get(f"https://api.clickup.com/api/v2/task/{task_id}", headers=cu_headers)
+        if resp.status_code != 200:
+            return func.HttpResponse(
+                json.dumps({"error": f"ClickUp returned {resp.status_code}"}),
+                mimetype="application/json",
+                status_code=502
+            )
+        data = resp.json()
+    except Exception as e:
+        logging.error(f"ClickUp fetch failed during regenerate for {task_id}: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), mimetype="application/json", status_code=500)
+
+    # Extract fields
+    addr = ""
+    desc = ""
+    action_items = None
+    start_date = data.get("start_date")
+    start_buffer = 0
+    translate_flag = False
+
+    for cf in data.get("custom_fields", []):
+        name = cf.get("name", "")
+        if name == "Property Address":
+            addr = cf.get("value") or ""
+        elif name == "Task Issue Description":
+            desc = cf.get("value") or ""
+        elif name == "Task Start Buffer":
+            start_buffer = int(float(cf.get("value", 0) or 0))
+        elif name == "Task Action Items":
+            action_items = cf.get("value_richtext")
+        elif name == "Translate":
+            val = cf.get("value")
+            translate_flag = str(val).lower() == "true" if val is not None else False
+
+    image_bytes = []
+    for attachment in data.get("attachments", []):
+        thumb_url = attachment.get("thumbnail_medium") or attachment.get("thumbnail_small")
+        if thumb_url:
+            try:
+                image_bytes.append(download_image_bytes(thumb_url))
+            except Exception as img_err:
+                logging.warning(f"Skipping attachment thumbnail during regenerate: {img_err}")
+
+    barcode_func_key = get_secret_value("BarcodeScanFuncKey")
+    barcode_link = f'https://fa-clickup-barcode-automation.azurewebsites.net/api/http_trigger_barcodescan?code={barcode_func_key}&task_id={task_id}'
+
+    # Generate PDF
+    try:
+        generator = MaintenancePDFGenerator(translate_flag)
+        pdf_bytes = generator.generate(
+            property_address=addr,
+            unit_name='',
+            start_date=start_date,
+            start_buffer=start_buffer,
+            issue_description=desc,
+            action_items=action_items,
+            completion_url=barcode_link,
+            attachment_images=image_bytes
+        )
+    except Exception as e:
+        logging.error(f"PDF generation failed during regenerate for {task_id}: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), mimetype="application/json", status_code=500)
+
+    # Upload to blob — overwrite triggers EventGrid → email resend
+    try:
+        blob_service_client = _get_blob_service_client()
+        blob_client = blob_service_client.get_blob_client(container="content", blob=f"{task_id}.pdf")
+        blob_client.upload_blob(pdf_bytes, overwrite=True)
+        logging.info(f"Regenerated PDF uploaded to blob for task {task_id}")
+    except Exception as e:
+        logging.error(f"Blob upload failed during regenerate for {task_id}: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), mimetype="application/json", status_code=500)
+
+    # Refresh Table Storage snapshot — updates snapshot_written_at
+    snapshot_written_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        pdf_blob_url = f"https://faclickupbarcodeautomati.blob.core.windows.net/content/{task_id}.pdf"
+        write_task_snapshot(task_id, data, pdf_blob_url)
+        entity = read_task_snapshot(task_id)
+        if entity:
+            snapshot_written_at = entity.get("snapshot_written_at", snapshot_written_at)
+    except Exception as e:
+        logging.warning(f"Table Storage snapshot refresh failed during regenerate (non-fatal): {e}")
+
+    return func.HttpResponse(
+        json.dumps({"ok": True, "snapshot_written_at": snapshot_written_at}),
+        mimetype="application/json",
+        status_code=200
+    )

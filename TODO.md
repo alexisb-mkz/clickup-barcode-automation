@@ -1,6 +1,6 @@
 # Development TODOs
 
-## [ ] 1. Translate timestamps in date pickers
+## [X] 1. Translate timestamps in date pickers
 
 **Where:** `frontend/task-ui/src/components/ArrivalDatePicker.tsx`, `ScheduledWindow.tsx`, `src/utils/dateUtils.ts`
 
@@ -12,7 +12,7 @@ Date/time strings displayed in the UI (scheduled window range, arrival date disp
 
 ---
 
-## [ ] 2. Warn when PDF may be outdated + allow technician to regenerate
+## [X] 2. Warn when PDF may be outdated + allow technician to regenerate
 
 **Where:** `function/barcode/function_app.py`, `frontend/task-ui/src/components/PdfLink.tsx`, `frontend/task-ui/src/api/taskApi.ts`
 
@@ -373,4 +373,7 @@ Recommended: **task comment** for the initial implementation since it requires n
 - Avoid duplicate comments on re-generation: consider prefixing with a marker (e.g. `"[Tech UI]"`) so duplicates are obvious, or accept that multiple regenerations will add multiple comments
 
 
-# 14 CHANGE DATE PCIKER TO BE 24 HRS and TRANSLATED MONTHS
+# [X] 14. CHANGE DATE PCIKER TO BE 24 HRS and TRANSLATED MONTHS
+
+
+# [ ] 15. Ensure all task data, including attachments, is indexed and stored so it can be searched using AI search

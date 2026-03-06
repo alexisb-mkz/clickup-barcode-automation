@@ -26,11 +26,14 @@ def _get_table_client(table_name: str = TABLE_NAME) -> TableClient:
     return service.get_table_client(table_name)
 
 
-def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str) -> None:
+def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str, update_snapshot_time: bool = True) -> None:
     """
     Upsert a task snapshot entity into Table Storage.
     Uses MERGE mode so existing tech fields (arrival_date_iso, etc.) are preserved
     if the PDF is regenerated for the same task.
+
+    Set update_snapshot_time=False when refreshing cached ClickUp fields on a GET
+    so that snapshot_written_at reflects only actual PDF generation events.
     """
     addr = ""
     desc = ""
@@ -70,8 +73,15 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str) -> Non
         "task_status": task_status,
         "translate_flag": translate_flag,
         "pdf_blob_url": pdf_blob_url,
-        "snapshot_written_at": datetime.now(timezone.utc).isoformat(),
     }
+    if update_snapshot_time:
+        entity["snapshot_written_at"] = datetime.now(timezone.utc).isoformat()
+        # Store field values as of PDF generation so GET can diff against them
+        entity["pdf_task_name"] = task_data.get("name", "")
+        entity["pdf_property_address"] = addr
+        entity["pdf_issue_description"] = desc
+        entity["pdf_action_items_raw"] = action_items_raw
+        entity["pdf_start_date_ms"] = str(task_data.get("start_date") or "")
     if contractor_notes_field_id:
         entity["contractor_notes_field_id"] = contractor_notes_field_id
 
@@ -103,6 +113,26 @@ def is_snapshot_fresh(entity: dict, ttl_seconds: int = CACHE_TTL_SECONDS) -> boo
         return age < ttl_seconds
     except Exception:
         return False
+
+
+def seed_pdf_snapshot_fields(task_id: str, fields: dict) -> None:
+    """
+    One-time seed of pdf_* baseline fields for tasks that existed before the
+    field-diff feature was deployed. Uses MERGE so no other fields are touched.
+    After this write, any subsequent ClickUp changes will be detected on GET.
+    """
+    entity = {
+        "PartitionKey": PARTITION_KEY,
+        "RowKey": task_id,
+        "pdf_task_name":         fields.get("task_name", ""),
+        "pdf_property_address":  fields.get("property_address", ""),
+        "pdf_issue_description": fields.get("issue_description", ""),
+        "pdf_action_items_raw":  fields.get("action_items_raw", ""),
+        "pdf_start_date_ms":     fields.get("start_date_ms", ""),
+    }
+    client = _get_table_client()
+    client.upsert_entity(entity=entity, mode=UpdateMode.MERGE)
+    logging.info(f"Seeded pdf_* baseline fields in Table Storage for task {task_id}")
 
 
 def update_tech_fields(task_id: str, updates: dict) -> None:
