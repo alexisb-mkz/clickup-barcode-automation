@@ -230,7 +230,7 @@ Keep the ClickUp "Property Address" custom field option list automatically up to
 
 ---
 
-## [ ] 9. Flag ClickUp task when fields are changed after PDF was generated
+## [X] 9. Flag ClickUp task when fields are changed after PDF was generated
 
 **Type:** Investigation + light implementation — assess feasibility before building
 

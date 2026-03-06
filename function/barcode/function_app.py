@@ -40,6 +40,29 @@ def _get_blob_service_client():
     )
 
 
+PDF_STALE_TAG = "pdf-stale"
+
+
+def _sync_pdf_stale_tag(task_id: str, is_stale: bool, existing_tags: list, cu_headers: dict) -> None:
+    """Add or remove the pdf-stale tag on the ClickUp task when state changes. Non-fatal."""
+    has_tag = any(t.get("name") == PDF_STALE_TAG for t in existing_tags)
+    try:
+        if is_stale and not has_tag:
+            requests.post(
+                f"https://api.clickup.com/api/v2/task/{task_id}/tag/{PDF_STALE_TAG}",
+                headers=cu_headers
+            )
+            logging.info(f"Added '{PDF_STALE_TAG}' tag to task {task_id}")
+        elif not is_stale and has_tag:
+            requests.delete(
+                f"https://api.clickup.com/api/v2/task/{task_id}/tag/{PDF_STALE_TAG}",
+                headers=cu_headers
+            )
+            logging.info(f"Removed '{PDF_STALE_TAG}' tag from task {task_id}")
+    except Exception as e:
+        logging.warning(f"Tag sync failed for task {task_id} (non-fatal): {e}")
+
+
 def _extract_task_fields(data: dict) -> dict:
     """Normalize a ClickUp task API response into a flat dict for the UI."""
     addr = ""
@@ -467,6 +490,7 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
     # Diff current ClickUp values against the values frozen at PDF generation time.
     # Only runs when a PDF has been generated (snapshot_written_at is set).
     pdf_stale_fields = []
+    pdf_baseline_missing = True
     if entity and entity.get("snapshot_written_at") and not cache_stale:
         pdf_baseline_missing = entity.get("pdf_task_name") is None
 
@@ -489,6 +513,15 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
                 pdf_val = entity.get(pdf_key)
                 if pdf_val is not None and str(fields.get(current_key, "")) != str(pdf_val):
                     pdf_stale_fields.append(label)
+
+    # Sync pdf-stale tag on the ClickUp task — uses already-fetched data, no extra GET needed.
+    if clickup_data and not cache_stale and entity and entity.get("snapshot_written_at") and not pdf_baseline_missing:
+        _sync_pdf_stale_tag(
+            task_id,
+            is_stale=bool(pdf_stale_fields),
+            existing_tags=clickup_data.get("tags", []),
+            cu_headers=cu_headers
+        )
 
     response_data = {**fields, **tech_fields, "cache_stale": cache_stale, "pdf_stale_fields": pdf_stale_fields}
     response_data.pop("action_items_raw", None)
@@ -802,6 +835,14 @@ def http_trigger_regenerate_pdf(req: func.HttpRequest) -> func.HttpResponse:
             snapshot_written_at = entity.get("snapshot_written_at", snapshot_written_at)
     except Exception as e:
         logging.warning(f"Table Storage snapshot refresh failed during regenerate (non-fatal): {e}")
+
+    # Remove pdf-stale tag now that the PDF is current
+    _sync_pdf_stale_tag(
+        task_id,
+        is_stale=False,
+        existing_tags=data.get("tags", []),
+        cu_headers=cu_headers
+    )
 
     return func.HttpResponse(
         json.dumps({"ok": True, "snapshot_written_at": snapshot_written_at}),
