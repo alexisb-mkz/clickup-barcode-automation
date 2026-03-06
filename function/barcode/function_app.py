@@ -1,8 +1,10 @@
 import os
 import json
+import uuid
 import base64
 import datetime
 import logging
+from zoneinfo import ZoneInfo
 import requests
 import azure.functions as func
 from azure.storage.blob import BlobServiceClient
@@ -41,6 +43,13 @@ def _get_blob_service_client():
 
 
 PDF_STALE_TAG = "pdf-stale"
+_FIELD_LABELS = {
+    "task_name":        "Task Name",
+    "property_address": "Property Address",
+    "issue_description":"Issue Description",
+    "action_items":     "Action Items",
+    "scheduled_date":   "Scheduled Date",
+}
 
 
 def _sync_pdf_stale_tag(task_id: str, is_stale: bool, existing_tags: list, cu_headers: dict) -> None:
@@ -61,6 +70,79 @@ def _sync_pdf_stale_tag(task_id: str, is_stale: bool, existing_tags: list, cu_he
             logging.info(f"Removed '{PDF_STALE_TAG}' tag from task {task_id}")
     except Exception as e:
         logging.warning(f"Tag sync failed for task {task_id} (non-fatal): {e}")
+
+
+def _sync_pdf_warnings_field(task_id: str, is_stale: bool, custom_fields: list,
+                              stale_fields: list, cu_headers: dict,
+                              snapshot_written_at: str | None = None) -> None:
+    """
+    Set or clear the ClickUp 'Warnings' rich-text custom field with a red-strong banner
+    when the PDF is stale. Non-fatal.
+    """
+    field_id = None
+    for cf in custom_fields:
+        if cf.get("name", "").lower() == "warnings":
+            field_id = cf.get("id")
+            break
+
+    if not field_id:
+        logging.warning(f"'Warnings' custom field not found for task {task_id}, skipping warning sync")
+        return
+
+    try:
+        if is_stale:
+            def _banner_line(text: str, bullet: bool = False) -> list:
+                attrs = {
+                    "block-id": f"block-{uuid.uuid4()}",
+                    "advanced-banner": "[object Object]",
+                    "advanced-banner-color": "red-strong",
+                }
+                if bullet:
+                    attrs["list"] = {"list": "bullet"}
+                return [{"insert": text}, {"attributes": attrs, "insert": "\n"}]
+
+            _ET = ZoneInfo("America/New_York")
+            now_str = datetime.datetime.now(_ET).strftime("%Y-%m-%d %H:%M ET")
+            pdf_gen_str = ""
+            if snapshot_written_at:
+                try:
+                    dt = datetime.datetime.fromisoformat(snapshot_written_at)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    pdf_gen_str = dt.astimezone(_ET).strftime("%Y-%m-%d %H:%M ET")
+                except Exception:
+                    pdf_gen_str = snapshot_written_at
+
+            ops = []
+            ops += _banner_line("⚠️ PDF OUTDATED — REGENERATION REQUIRED")
+            if pdf_gen_str:
+                ops += _banner_line(f"PDF last generated: {pdf_gen_str}")
+            ops += _banner_line(f"Changes detected: {now_str}")
+            ops += _banner_line("Fields changed since last PDF generation:")
+            for f in stale_fields:
+                ops += _banner_line(_FIELD_LABELS.get(f, f), bullet=True)
+            ops += _banner_line("To regenerate: re-add the 'createpdf' tag to this task, or use the technician portal.")
+
+            resp = requests.post(
+                f"https://api.clickup.com/api/v2/task/{task_id}/field/{field_id}",
+                json={"value": json.dumps({"ops": ops})},
+                headers=cu_headers
+            )
+            if resp.status_code not in (200, 201):
+                logging.warning(f"Warnings field update returned {resp.status_code} for task {task_id}")
+            else:
+                logging.info(f"Warnings field set for task {task_id}")
+        else:
+            resp = requests.delete(
+                f"https://api.clickup.com/api/v2/task/{task_id}/field/{field_id}",
+                headers=cu_headers
+            )
+            if resp.status_code not in (200, 201, 204):
+                logging.warning(f"Warnings field clear returned {resp.status_code} for task {task_id}")
+            else:
+                logging.info(f"Warnings field cleared for task {task_id}")
+    except Exception as e:
+        logging.warning(f"Warnings field sync failed for task {task_id} (non-fatal): {e}")
 
 
 def _extract_task_fields(data: dict) -> dict:
@@ -514,13 +596,22 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
                 if pdf_val is not None and str(fields.get(current_key, "")) != str(pdf_val):
                     pdf_stale_fields.append(label)
 
-    # Sync pdf-stale tag on the ClickUp task — uses already-fetched data, no extra GET needed.
+    # Sync pdf-stale indicators on the ClickUp task — uses already-fetched data, no extra GET needed.
     if clickup_data and not cache_stale and entity and entity.get("snapshot_written_at") and not pdf_baseline_missing:
+        is_stale = bool(pdf_stale_fields)
         _sync_pdf_stale_tag(
             task_id,
-            is_stale=bool(pdf_stale_fields),
+            is_stale=is_stale,
             existing_tags=clickup_data.get("tags", []),
             cu_headers=cu_headers
+        )
+        _sync_pdf_warnings_field(
+            task_id,
+            is_stale=is_stale,
+            custom_fields=clickup_data.get("custom_fields", []),
+            stale_fields=pdf_stale_fields,
+            cu_headers=cu_headers,
+            snapshot_written_at=entity.get("snapshot_written_at") if entity else None
         )
 
     response_data = {**fields, **tech_fields, "cache_stale": cache_stale, "pdf_stale_fields": pdf_stale_fields}
@@ -836,11 +927,18 @@ def http_trigger_regenerate_pdf(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.warning(f"Table Storage snapshot refresh failed during regenerate (non-fatal): {e}")
 
-    # Remove pdf-stale tag now that the PDF is current
+    # Remove pdf-stale indicators now that the PDF is current
     _sync_pdf_stale_tag(
         task_id,
         is_stale=False,
         existing_tags=data.get("tags", []),
+        cu_headers=cu_headers
+    )
+    _sync_pdf_warnings_field(
+        task_id,
+        is_stale=False,
+        custom_fields=data.get("custom_fields", []),
+        stale_fields=[],
         cu_headers=cu_headers
     )
 

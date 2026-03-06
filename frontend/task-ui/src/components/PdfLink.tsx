@@ -19,25 +19,17 @@ function fieldLabel(key: string, lang: Lang): string {
 
 interface Props {
   taskId: string
-  dateUpdatedMs: string
-  snapshotWrittenAt: string | null
   pdfStaleFields: string[]
   onRegenerated: (snapshotWrittenAt: string) => void
 }
 
-export default function PdfLink({ taskId, dateUpdatedMs, snapshotWrittenAt, pdfStaleFields, onRegenerated }: Props) {
+export default function PdfLink({ taskId, pdfStaleFields, onRegenerated }: Props) {
   const { lang } = useLanguage()
   const [regenerating, setRegenerating] = useState(false)
   const [regenSuccess, setRegenSuccess] = useState(false)
   const [regenError, setRegenError] = useState<string | null>(null)
 
-  // Primary: use the backend-computed field diff when available.
-  // Fallback: timestamp comparison for tasks without pdf_* fields in storage yet.
-  const isStale = pdfStaleFields.length > 0 || (
-    !!dateUpdatedMs &&
-    !!snapshotWrittenAt &&
-    parseInt(dateUpdatedMs) > new Date(snapshotWrittenAt).getTime()
-  )
+  const isStale = pdfStaleFields.length > 0
 
   function handleViewPdf() {
     window.open(getPdfUrl(taskId), '_blank', 'noopener,noreferrer')
