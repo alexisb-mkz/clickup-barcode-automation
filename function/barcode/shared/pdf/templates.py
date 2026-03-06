@@ -47,7 +47,7 @@ class MaintenanceRequestTemplate:
         elements.append(Paragraph(t(f"Sent on {current_datetime}"), self.styles.date))
         elements.append(Spacer(1, 0.05 * inch))
         
-        sanitized_address = self.normalize_address(t(property_address))
+        sanitized_address = self.normalize_address(property_address)
         
         addr_len = len(sanitized_address)
         if addr_len <= 35:

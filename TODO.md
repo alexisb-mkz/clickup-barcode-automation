@@ -261,7 +261,7 @@ Recommended starting point: **tag**, since it requires no custom field setup and
 
 ---
 
-## [ ] 10. Use Chinese-appropriate date format when lang is zh
+## [X] 10. Use Chinese-appropriate date format when lang is zh
 
 **Where:** `frontend/task-ui/src/utils/dateUtils.ts` (`formatDisplayDate`)
 
@@ -299,7 +299,7 @@ export function formatDisplayDate(iso: string, lang: 'en' | 'zh' = 'en'): string
 
 ---
 
-## [ ] 11. Remove property address from translation
+## [X] 11. Remove property address from translation
 
 **Where:** `function/barcode/shared/pdf/templates.py` (line ~50), `frontend/task-ui/src/hooks/useTaskTranslation.ts`
 
