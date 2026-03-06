@@ -25,7 +25,7 @@ export function formatDisplayDate(iso: string, lang: 'en' | 'zh' = 'en'): string
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
+    hour12: lang !== 'zh',
   })
 }
 

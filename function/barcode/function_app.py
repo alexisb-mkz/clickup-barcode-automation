@@ -183,7 +183,12 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
 
             image_bytes = []
             for i in data["attachments"]:
-                image_bytes.append(download_image_bytes(i["thumbnail_medium"]))
+                thumb_url = i.get("thumbnail_medium") or i.get("thumbnail_small")
+                if thumb_url:
+                    try:
+                        image_bytes.append(download_image_bytes(thumb_url))
+                    except Exception as img_err:
+                        logging.warning(f"Skipping attachment thumbnail: {img_err}")
 
             addr = ""
             desc = ""
@@ -192,16 +197,14 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
             start_date = data.get("start_date")  # top-level field
             translate_flag = False
 
-
-
             for cf in data["custom_fields"]:
                 logging.info(cf["name"])
                 logging.info(cf["type"])
                 if cf["name"] == "Property Address":
-                    addr = cf["value"]
+                    addr = cf.get("value") or ""
 
                 if cf["name"] == "Task Issue Description":
-                    desc = cf["value"]
+                    desc = cf.get("value") or ""
 
                 if cf["name"] == "Task Start Buffer":
                     start_buffer = int(float(cf.get("value", 0) or 0))
@@ -210,7 +213,8 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
                     action_items = cf.get("value_richtext")
 
                 if cf["name"] == "Translate":
-                    translate_flag = cf.get("value", "false").lower() == "true"
+                    val = cf.get("value")
+                    translate_flag = str(val).lower() == "true" if val is not None else False
 
         except Exception as ex:
             logging.error(f"Error retrieving task details: {type(ex).__name__} - {str(ex)}")
@@ -483,14 +487,17 @@ def _handle_task_put(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
     clickup_payload = {}
     if "clickup_status" in body:
         clickup_payload["status"] = body["clickup_status"]
-    if body.get("arrival_date_iso"):
-        try:
-            iso_str = body["arrival_date_iso"].replace('Z', '+00:00')
-            dt = datetime.datetime.fromisoformat(iso_str)
-            clickup_payload["start_date"] = int(dt.timestamp() * 1000)
-            clickup_payload["start_date_time"] = True
-        except ValueError:
-            pass
+    if "arrival_date_iso" in body:
+        if body["arrival_date_iso"]:
+            try:
+                iso_str = body["arrival_date_iso"].replace('Z', '+00:00')
+                dt = datetime.datetime.fromisoformat(iso_str)
+                clickup_payload["start_date"] = int(dt.timestamp() * 1000)
+                clickup_payload["start_date_time"] = True
+            except ValueError:
+                pass
+        else:
+            clickup_payload["start_date"] = None
 
     if clickup_payload:
         try:
@@ -556,12 +563,15 @@ def _handle_task_put(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
     # Return start_date_ms so the frontend can update ScheduledWindow immediately
     # without waiting for the next GET to reflect the ClickUp write.
     if "arrival_date_iso" in tech_updates:
-        try:
-            iso_str = tech_updates["arrival_date_iso"].replace('Z', '+00:00')
-            dt = datetime.datetime.fromisoformat(iso_str)
-            response_body["start_date_ms"] = str(int(dt.timestamp() * 1000))
-        except Exception:
-            pass
+        if tech_updates["arrival_date_iso"]:
+            try:
+                iso_str = tech_updates["arrival_date_iso"].replace('Z', '+00:00')
+                dt = datetime.datetime.fromisoformat(iso_str)
+                response_body["start_date_ms"] = str(int(dt.timestamp() * 1000))
+            except Exception:
+                pass
+        else:
+            response_body["start_date_ms"] = ""
 
     return func.HttpResponse(
         json.dumps(response_body),
