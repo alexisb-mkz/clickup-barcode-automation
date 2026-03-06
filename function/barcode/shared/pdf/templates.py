@@ -40,15 +40,16 @@ class MaintenanceRequestTemplate:
         elements = []
         
         t = translate_fn if translate_fn else (lambda x: x)
-        
+        time_fmt = '%H:%M' if translate_fn else '%I:%M %p'
+
         # Current date/time
         est_tz = ZoneInfo("US/Eastern")
-        current_datetime = datetime.now(est_tz).strftime('%B %d, %Y at %I:%M %p')
+        current_datetime = datetime.now(est_tz).strftime(f'%B %d, %Y at {time_fmt}')
         elements.append(Paragraph(t(f"Sent on {current_datetime}"), self.styles.date))
         elements.append(Spacer(1, 0.05 * inch))
-        
+
         sanitized_address = self.normalize_address(property_address)
-        
+
         addr_len = len(sanitized_address)
         if addr_len <= 35:
             title_font_size = self.styles.title.fontSize
@@ -65,16 +66,16 @@ class MaintenanceRequestTemplate:
             leading=title_font_size * 1.25,
             spaceAfter=2,
         )
-        
+
         start_date_str = t("Please set an expected arrival date and time range by scanning the QR code")
-        
+
         if start_date:
             timestamp_s = float(start_date) / 1000.0
             est_tz = ZoneInfo("US/Eastern")
             start_dt = datetime.fromtimestamp(timestamp_s, tz=est_tz)
             end_dt   = datetime.fromtimestamp(timestamp_s + start_buffer * 60 * 60, tz=est_tz)
-            start_date_fmt = start_dt.strftime('%B %d, %Y at %I:%M %p')
-            w_buffer_fmt   = end_dt.strftime('%I:%M %p')
+            start_date_fmt = start_dt.strftime(f'%B %d, %Y at {time_fmt}')
+            w_buffer_fmt   = end_dt.strftime(time_fmt)
             start_date_str = t(
                 f"Expected arrival time range: {start_date_fmt} - {w_buffer_fmt}. "
                 "Please scan the QR code to make an update if this changes."
@@ -155,11 +156,11 @@ class MaintenanceRequestTemplate:
         
         t = translate_fn if translate_fn else (lambda x: x)
         
-        elements.append(Paragraph("Issue Description", self.styles.section_header))
+        elements.append(Paragraph(f"<b>{t('Issue Description')}</b>", self.styles.section_header))
         elements.append(Paragraph(t(issue_description), self.styles.body))
         if action_items:
             elements.append(Spacer(1, 0.1 * inch))
-            elements.append(Paragraph("Action Items", self.styles.section_header))
+            elements.append(Paragraph(f"<b>{t('Action Items')}</b>", self.styles.section_header))
             elements.extend(action_items)  # already Paragraphs
             logging.info(f"Added action items to PDF: {action_items}")
         return elements

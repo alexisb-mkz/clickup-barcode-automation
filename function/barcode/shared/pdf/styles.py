@@ -40,17 +40,18 @@ class PDFStyles:
 
     @property
     def subtitle(self):
-        return ParagraphStyle('CustomSubtitle', parent=self.base_styles['Heading2'],
-            fontSize=14,        # was 16
-            spaceAfter=6,       # was 10
+        return ParagraphStyle('CustomSubtitle', parent=self.base_styles['Normal'],
+            fontSize=14,
+            spaceAfter=6,
             textColor='#666666',
             fontName=self.fontName)
 
     @property
     def section_header(self):
-        return ParagraphStyle('SectionHeader', parent=self.base_styles['Heading2'],
-            fontSize=12,        # was 14
-            spaceAfter=6,       # was 10
+        return ParagraphStyle('SectionHeader', parent=self.base_styles['Normal'],
+            fontSize=12,
+            spaceBefore=10,
+            spaceAfter=6,
             textColor='#444444',
             fontName=self.fontName)
 
