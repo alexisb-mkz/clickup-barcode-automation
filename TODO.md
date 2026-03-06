@@ -47,17 +47,11 @@ In `PdfLink.tsx` (or inline in `TaskPage`):
 
 ---
 
-## [ ] 3. Sync tech notes with ClickUp
+## [X] 3. Sync tech notes with ClickUp
 
-**Where:** `function/barcode/function_app.py` (`_handle_task_put`), `function/barcode/shared/utils/table_cache.py`
+**Where:** `function/barcode/function_app.py` (`_handle_task_put`)
 
-Currently `tech_notes` is stored only in Table Storage. It should also be written back to ClickUp so notes are visible in the ClickUp task.
-
-Decide on target field in ClickUp:
-- **Option A:** Append/overwrite a custom field (e.g. "Tech Notes") via `PUT /api/v2/task/{id}` with `custom_fields`
-- **Option B:** Post as a task comment via `POST /api/v2/task/{id}/comment`
-
-In `_handle_task_put`: after writing tech fields to Table Storage, if `tech_notes` is present, make the additional ClickUp API call. Handle failure non-fatally (log warning, still return 200 so the local save isn't lost).
+Implemented: `tech_notes` is synced to the ClickUp "Contractor Notes" custom field on every PUT. The field ID is read from the Table Storage snapshot (cached by `write_task_snapshot` on the preceding GET); if absent, a live ClickUp GET fetches it. Failure is non-fatal.
 
 ---
 
@@ -232,32 +226,15 @@ Keep the ClickUp "Property Address" custom field option list automatically up to
 
 ## [X] 9. Flag ClickUp task when fields are changed after PDF was generated
 
-**Type:** Investigation + light implementation — assess feasibility before building
+**Where:** `function/barcode/function_app.py` (`_handle_task_get`, `http_trigger_regenerate_pdf`, `http_trigger_task_parse`)
 
-When a ClickUp task's fields are updated after the PDF was last generated (`snapshot_written_at`), automatically add a tag or update a custom field on the ClickUp task to signal to the manager that the PDF is stale and may need to be regenerated (see TODO #2 for the technician-facing regenerate flow).
+Implemented via field-level diff using `pdf_*` baseline fields stored in Table Storage at PDF generation time. On every GET, current ClickUp values are compared to `pdf_*` values to produce `pdf_stale_fields`.
 
-### Trigger options to investigate
+Two ClickUp-side indicators are set/cleared as side effects:
+1. **`pdf-stale` tag** — added/removed via `_sync_pdf_stale_tag()`
+2. **"Warnings" rich text custom field** — set to a Quill Delta `advanced-banner-color: "red-strong"` banner listing changed fields, PDF generation timestamp, and detection timestamp (both in ET); cleared by DELETE after regeneration via `_sync_pdf_warnings_field()`
 
-- **ClickUp webhook `taskUpdated`** — fires when any task field changes; register a new webhook handler (or extend `http_trigger_task_parse`) that checks whether `date_updated` on the task exceeds `snapshot_written_at` in Table Storage
-- **On GET in `_handle_task_get`** — compare `clickup_data["date_updated"]` to `entity["snapshot_written_at"]`; if stale, write the flag to ClickUp as a side effect (simpler, but only triggers when a technician scans the QR code)
-
-### Flag mechanism options
-
-1. **Tag** — add a `"pdf-stale"` tag to the task via `POST /api/v2/task/{task_id}/tag/{tag_name}`; visible in ClickUp board/list views; easy to filter on; remove the tag after PDF is regenerated
-2. **Custom field** — set a boolean/checkbox "PDF Stale" custom field; more structured but requires the field to exist on the list
-3. **Task comment** — post a comment noting the stale PDF; least invasive but adds noise
-
-Recommended starting point: **tag**, since it requires no custom field setup and is trivially reversible.
-
-### Stale detection
-
-- `date_updated` from ClickUp task (`data.get("date_updated")`) is a ms timestamp string — expose this in `_extract_task_fields` (already noted in TODO #2)
-- Compare `int(date_updated) > datetime_to_ms(snapshot_written_at)` to determine staleness
-- Only flag if a PDF has actually been generated (i.e. `snapshot_written_at` is not null)
-
-### Clearing the flag
-
-- Remove the tag / reset the field after a successful PDF regeneration (TODO #2) or after `http_trigger_task_parse` runs and overwrites the blob
+Staleness is cleared when the PDF is regenerated — either via `POST /api/task/{id}/regenerate-pdf` (technician portal) or by re-adding the `createpdf` tag in ClickUp (which triggers `http_trigger_task_parse`).
 
 ---
 
