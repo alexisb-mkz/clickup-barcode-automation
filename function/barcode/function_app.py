@@ -52,6 +52,25 @@ _FIELD_LABELS = {
 }
 
 
+def _post_pdf_comment(task_id: str, cu_headers: dict, source: str = "ClickUp") -> None:
+    """Post a comment to the ClickUp task confirming PDF generation. Non-fatal."""
+    _ET = ZoneInfo("America/New_York")
+    ts = datetime.datetime.now(_ET).strftime("%Y-%m-%d %H:%M ET")
+    comment = f"📄 PDF generated and sent — {ts} (via {source})"
+    try:
+        resp = requests.post(
+            f"https://api.clickup.com/api/v2/task/{task_id}/comment",
+            json={"comment_text": comment, "notify_all": False},
+            headers=cu_headers
+        )
+        if resp.status_code not in (200, 201):
+            logging.warning(f"PDF comment post returned {resp.status_code} for task {task_id}")
+        else:
+            logging.info(f"PDF comment posted for task {task_id}")
+    except Exception as e:
+        logging.warning(f"PDF comment post failed for task {task_id} (non-fatal): {e}")
+
+
 def _sync_pdf_stale_tag(task_id: str, is_stale: bool, existing_tags: list, cu_headers: dict) -> None:
     """Add or remove the pdf-stale tag on the ClickUp task when state changes. Non-fatal."""
     has_tag = any(t.get("name") == PDF_STALE_TAG for t in existing_tags)
@@ -378,6 +397,7 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
                     stale_fields=[],
                     cu_headers=headers
                 )
+                _post_pdf_comment(id, headers, source="ClickUp")
 
             except Exception as e:
                 logging.error(f"Failed to write blob: {str(e)}")
@@ -973,6 +993,7 @@ def http_trigger_regenerate_pdf(req: func.HttpRequest) -> func.HttpResponse:
         stale_fields=[],
         cu_headers=cu_headers
     )
+    _post_pdf_comment(task_id, cu_headers, source="Technician Portal")
 
     return func.HttpResponse(
         json.dumps({"ok": True, "snapshot_written_at": snapshot_written_at}),
