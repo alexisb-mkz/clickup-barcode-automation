@@ -99,13 +99,22 @@ def _sync_pdf_warnings_field(task_id: str, is_stale: bool, custom_fields: list,
     when the PDF is stale. Non-fatal.
     """
     field_id = None
+    current_value = None
     for cf in custom_fields:
         if cf.get("name", "").lower() == "warnings":
             field_id = cf.get("id")
+            current_value = cf.get("value")
             break
 
     if not field_id:
         logging.warning(f"'Warnings' custom field not found for task {task_id}, skipping warning sync")
+        return
+
+    # Idempotency check — skip if already in the correct state to avoid triggering
+    # a feedback loop where our own write fires another taskUpdated webhook.
+    warning_currently_active = isinstance(current_value, str) and "advanced-banner" in current_value
+    if is_stale == warning_currently_active:
+        logging.info(f"Warnings field already in correct state (active={warning_currently_active}) for {task_id}, skipping")
         return
 
     try:
