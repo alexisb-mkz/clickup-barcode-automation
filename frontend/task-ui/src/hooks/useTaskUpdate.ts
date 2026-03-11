@@ -2,7 +2,11 @@ import { useState } from 'react'
 import { updateTask } from '../api/taskApi'
 import type { Task, TaskUpdatePayload } from '../types/task'
 
-export function useTaskUpdate(taskId: string, setTask: React.Dispatch<React.SetStateAction<Task | null>>) {
+export function useTaskUpdate(
+  taskId: string,
+  setTask: React.Dispatch<React.SetStateAction<Task | null>>,
+  refresh: () => void,
+) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -16,6 +20,7 @@ export function useTaskUpdate(taskId: string, setTask: React.Dispatch<React.SetS
       setTask((prev) => prev ? { ...prev, ...updated } : prev)
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 2500)
+      refresh()
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string }
       setSaveError(e?.response?.data?.error ?? e?.message ?? 'Failed to save')

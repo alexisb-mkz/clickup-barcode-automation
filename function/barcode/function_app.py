@@ -133,11 +133,14 @@ def _sync_pdf_warnings_field(task_id: str, is_stale: bool, custom_fields: list,
             else:
                 logging.info(f"Warnings field set for task {task_id}")
         else:
-            resp = requests.delete(
+            # Clear by posting an empty Quill document — DELETE is unreliable for rich text fields.
+            empty_delta = json.dumps({"ops": [{"insert": "\n"}]})
+            resp = requests.post(
                 f"https://api.clickup.com/api/v2/task/{task_id}/field/{field_id}",
+                json={"value": empty_delta},
                 headers=cu_headers
             )
-            if resp.status_code not in (200, 201, 204):
+            if resp.status_code not in (200, 201):
                 logging.warning(f"Warnings field clear returned {resp.status_code} for task {task_id}")
             else:
                 logging.info(f"Warnings field cleared for task {task_id}")
@@ -599,6 +602,20 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
     # Sync pdf-stale indicators on the ClickUp task — uses already-fetched data, no extra GET needed.
     if clickup_data and not cache_stale and entity and entity.get("snapshot_written_at") and not pdf_baseline_missing:
         is_stale = bool(pdf_stale_fields)
+
+        # Race-condition guard: if is_stale=True, re-read Table Storage to check whether
+        # snapshot_written_at advanced while this GET was in flight (i.e. the PDF was
+        # regenerated concurrently). If so, skip setting the warning — the regenerate
+        # endpoint already cleared it, and setting it again would undo that.
+        if is_stale:
+            try:
+                fresh_entity = read_task_snapshot(task_id)
+                if fresh_entity and fresh_entity.get("snapshot_written_at") != entity.get("snapshot_written_at"):
+                    logging.info(f"PDF regenerated during GET for {task_id}; skipping stale warning sync")
+                    is_stale = False
+            except Exception as e:
+                logging.warning(f"Race-guard re-read failed (non-fatal), proceeding: {e}")
+
         _sync_pdf_stale_tag(
             task_id,
             is_stale=is_stale,

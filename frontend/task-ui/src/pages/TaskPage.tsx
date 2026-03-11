@@ -22,9 +22,9 @@ export default function TaskPage() {
   const { lang, toggleLang, setLangAuto } = useLanguage()
   const langInitialized = useRef(false)
 
-  const { task, setTask, loading, error } = useTask(taskId ?? '')
+  const { task, setTask, refresh, loading, error } = useTask(taskId ?? '')
   const { displayTask, translating } = useTaskTranslation(task, lang)
-  const { save, saving, saveError, saveSuccess } = useTaskUpdate(taskId ?? '', setTask)
+  const { save, saving, saveError, saveSuccess } = useTaskUpdate(taskId ?? '', setTask, refresh)
   const { upload, uploading, uploadError } = useAttachmentUpload(taskId ?? '', setTask)
 
   // Auto-default to Chinese if translate_flag is set and user has no stored preference.

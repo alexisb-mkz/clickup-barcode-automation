@@ -11,6 +11,15 @@ export function useTask(taskId: string) {
   const taskRef = useRef<Task | null>(null)
   taskRef.current = task
 
+  function refresh() {
+    if (!taskId) return
+    getTask(taskId)
+      .then(setTask)
+      .catch(() => {
+        // Silent — keep showing the last good data if a manual refresh fails
+      })
+  }
+
   // Initial load
   useEffect(() => {
     if (!taskId) return
@@ -51,5 +60,5 @@ export function useTask(taskId: string) {
     return () => clearTimeout(timerId)
   }, [taskId])
 
-  return { task, setTask, loading, error }
+  return { task, setTask, refresh, loading, error }
 }
