@@ -46,8 +46,16 @@ ClickUp webhook (taskTagUpdated + "createpdf" tag)
   → MaintenancePDFGenerator (ReportLab)
   → Blob Storage (content/{task_id}.pdf)
   → write_task_snapshot() → TableCache (MERGE upsert, update_snapshot_time=True)
+  → _sync_pdf_stale_tag + _sync_pdf_warnings_field (clear stale indicators)
+  → _post_pdf_comment (ClickUp task comment with timestamp)
   → event_grid_blob_trigger_send_email (EventGrid on new blob)
   → ACS Email with PDF attached
+
+ClickUp webhook (taskUpdated — any field change)
+  → http_trigger_task_parse
+  → read_task_snapshot() — skip if no PDF snapshot or pdf_* baseline
+  → ClickUp API (fetch task)
+  → _sync_staleness() → _sync_pdf_stale_tag + _sync_pdf_warnings_field
 
 QR code on PDF contains:
   https://fa-clickup-barcode-automation.azurewebsites.net/api/http_trigger_barcodescan
@@ -95,11 +103,17 @@ Staleness side effects (only when `snapshot_written_at` is set and `pdf_*` basel
 
 When a baseline doesn't exist (`pdf_task_name is None`), `seed_pdf_snapshot_fields()` is called to initialise it from current values, and tag/warning sync is skipped for that GET.
 
+Shared helpers avoid code duplication across triggers:
+- `_compute_stale_fields(fields, entity)` — diffs current field values against `pdf_*` entity fields, returns list of label keys
+- `_sync_staleness(task_id, clickup_data, entity, cu_headers)` — calls `_compute_stale_fields` then syncs both the tag and Warnings field; used by both `_handle_task_get` and the `taskUpdated` webhook handler
+
+The `taskUpdated` webhook fires immediately when any field changes in ClickUp, so the warning appears without waiting for the contractor UI to load. The handler bails early (cheap Table Storage read) if the task has no PDF snapshot or no `pdf_*` baseline, so it only makes a ClickUp API call for tasks that actually have a generated PDF.
+
 Regeneration can be triggered two ways:
 - **Technician portal** — `POST /api/task/{task_id}/regenerate-pdf` endpoint; clears tag + Warnings field immediately after blob upload
 - **ClickUp tag** — re-adding the `createpdf` tag triggers `http_trigger_task_parse`; after blob upload and `write_task_snapshot`, it calls `_sync_pdf_stale_tag` and `_sync_pdf_warnings_field` to clear indicators immediately without waiting for a GET
 
-Both paths clear the ClickUp indicators synchronously so the warning disappears in ClickUp as soon as the PDF is sent, regardless of whether the contractor UI is open.
+Both paths clear the ClickUp indicators synchronously so the warning disappears in ClickUp as soon as the PDF is sent, regardless of whether the contractor UI is open. Both paths also call `_post_pdf_comment()` to post a timestamped comment on the ClickUp task confirming generation — `"📄 PDF generated and sent — YYYY-MM-DD HH:MM ET (via ClickUp)"` or `"(via Technician Portal)"`. Non-fatal.
 
 **Race condition guard:** when `_handle_task_get` is about to set the warning (`is_stale=True`), it re-reads the Table Storage entity to check if `snapshot_written_at` advanced since the entity was first read. If it changed, a concurrent regeneration completed mid-request — `is_stale` is flipped to `False` and the warning is left cleared rather than re-set.
 

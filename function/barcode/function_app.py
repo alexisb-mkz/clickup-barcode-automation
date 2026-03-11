@@ -167,6 +167,58 @@ def _sync_pdf_warnings_field(task_id: str, is_stale: bool, custom_fields: list,
         logging.warning(f"Warnings field sync failed for task {task_id} (non-fatal): {e}")
 
 
+_PDF_FIELD_COMPARISONS = [
+    ("task_name",        "pdf_task_name",        "task_name"),
+    ("property_address", "pdf_property_address", "property_address"),
+    ("issue_description","pdf_issue_description","issue_description"),
+    ("action_items_raw", "pdf_action_items_raw", "action_items"),
+    ("start_date_ms",    "pdf_start_date_ms",    "scheduled_date"),
+]
+
+
+def _compute_stale_fields(fields: dict, entity: dict) -> list:
+    """Return list of label keys where current ClickUp values differ from pdf_* baseline."""
+    stale = []
+    for current_key, pdf_key, label in _PDF_FIELD_COMPARISONS:
+        pdf_val = entity.get(pdf_key)
+        if pdf_val is not None and str(fields.get(current_key, "")) != str(pdf_val):
+            stale.append(label)
+    return stale
+
+
+def _sync_staleness(task_id: str, clickup_data: dict, entity: dict, cu_headers: dict) -> list:
+    """
+    Compute pdf_stale_fields and sync the pdf-stale tag + Warnings field on the ClickUp task.
+    Skips if the entity has no snapshot or no pdf_* baseline.
+    Returns the computed pdf_stale_fields list (may be empty).
+    Non-fatal — all ClickUp calls inside are individually guarded.
+    """
+    if not entity or not entity.get("snapshot_written_at"):
+        return []
+    if entity.get("pdf_task_name") is None:
+        return []
+
+    fields = _extract_task_fields(clickup_data)
+    pdf_stale_fields = _compute_stale_fields(fields, entity)
+    is_stale = bool(pdf_stale_fields)
+
+    _sync_pdf_stale_tag(
+        task_id,
+        is_stale=is_stale,
+        existing_tags=clickup_data.get("tags", []),
+        cu_headers=cu_headers,
+    )
+    _sync_pdf_warnings_field(
+        task_id,
+        is_stale=is_stale,
+        custom_fields=clickup_data.get("custom_fields", []),
+        stale_fields=pdf_stale_fields,
+        cu_headers=cu_headers,
+        snapshot_written_at=entity.get("snapshot_written_at"),
+    )
+    return pdf_stale_fields
+
+
 def _extract_task_fields(data: dict) -> dict:
     """Normalize a ClickUp task API response into a flat dict for the UI."""
     addr = ""
@@ -275,8 +327,26 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
             else:
                 logging.info("Most recent update was not createpdf tag addition, skipping")
                 return func.HttpResponse("Most recent update was not createpdf, skipping", status_code=201)
+
+        elif event == 'taskUpdated':
+            # Run staleness check so the ClickUp warning is set/cleared immediately
+            # when a manager edits task fields, without waiting for the contractor UI to open.
+            logging.info(f"taskUpdated event for task {id} — running staleness check")
+            token = _get_clickup_token()
+            cu_headers = {'accept': 'application/json', 'content-type': 'application/json', 'Authorization': token}
+            try:
+                entity = read_task_snapshot(id)
+                if not entity or not entity.get("snapshot_written_at") or entity.get("pdf_task_name") is None:
+                    return func.HttpResponse("No PDF snapshot or baseline for task, skipping", status_code=201)
+                resp = requests.get(f"https://api.clickup.com/api/v2/task/{id}", headers=cu_headers)
+                if resp.status_code == 200:
+                    _sync_staleness(id, resp.json(), entity, cu_headers)
+            except Exception as e:
+                logging.warning(f"taskUpdated staleness sync failed for {id} (non-fatal): {e}")
+            return func.HttpResponse("Staleness check completed", status_code=200)
+
         else:
-            return func.HttpResponse("Event is not taskTagUpdated, skipping", status_code=201)
+            return func.HttpResponse("Event not handled, skipping", status_code=201)
 
     except Exception as ex:
         logging.error(f"Error parsing request body: {type(ex).__name__} - {str(ex)}")
@@ -622,17 +692,7 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
             except Exception as seed_err:
                 logging.warning(f"pdf_* field seeding failed (non-fatal): {seed_err}")
         else:
-            comparisons = [
-                ("task_name",        "pdf_task_name",        "task_name"),
-                ("property_address", "pdf_property_address", "property_address"),
-                ("issue_description","pdf_issue_description","issue_description"),
-                ("action_items_raw", "pdf_action_items_raw", "action_items"),
-                ("start_date_ms",    "pdf_start_date_ms",    "scheduled_date"),
-            ]
-            for current_key, pdf_key, label in comparisons:
-                pdf_val = entity.get(pdf_key)
-                if pdf_val is not None and str(fields.get(current_key, "")) != str(pdf_val):
-                    pdf_stale_fields.append(label)
+            pdf_stale_fields = _compute_stale_fields(fields, entity)
 
     # Sync pdf-stale indicators on the ClickUp task — uses already-fetched data, no extra GET needed.
     if clickup_data and not cache_stale and entity and entity.get("snapshot_written_at") and not pdf_baseline_missing:

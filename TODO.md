@@ -349,6 +349,8 @@ Recommended: **task comment** for the initial implementation since it requires n
 - Handle failure non-fatally — log warning, the PDF was already sent so a comment failure should not return a 500
 - Avoid duplicate comments on re-generation: consider prefixing with a marker (e.g. `"[Tech UI]"`) so duplicates are obvious, or accept that multiple regenerations will add multiple comments
 
+**Note:** A `_post_pdf_comment()` helper already exists and is called on every PDF generation (both ClickUp tag and Technician Portal paths). The tech UI URL could be appended to that comment rather than posted separately.
+
 
 # [X] 14. CHANGE DATE PCIKER TO BE 24 HRS and TRANSLATED MONTHS
 
