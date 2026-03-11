@@ -26,14 +26,21 @@ export function useTaskTranslation(task: Task | null, lang: Lang) {
       return
     }
 
-    // Build the flat list of strings to translate: [task_name, issue_description, tech_notes, ...item texts]
+    // Build the flat list of strings to translate: [task_name, tech_notes, ...issue texts, ...action item texts]
+    const issueTexts = task.issue_description.map((item) => item.text)
     const actionTexts = task.action_items.map((item) => item.text)
-    const allTexts = [task.task_name, task.issue_description, task.tech_notes, ...actionTexts]
+    const allTexts = [task.task_name, task.tech_notes, ...issueTexts, ...actionTexts]
 
     setTranslating(true)
     translateTexts(allTexts)
       .then((results) => {
-        const [translatedName, translatedIssue, translatedTechNotes, ...translatedActionTexts] = results
+        const [translatedName, translatedTechNotes, ...rest] = results
+        const translatedIssueTexts = rest.slice(0, issueTexts.length)
+        const translatedActionTexts = rest.slice(issueTexts.length)
+        const translatedIssue = task.issue_description.map((item, i) => ({
+          ...item,
+          text: translatedIssueTexts[i] ?? item.text,
+        }))
         const translatedItems = task.action_items.map((item, i) => ({
           ...item,
           text: translatedActionTexts[i] ?? item.text,
@@ -41,7 +48,7 @@ export function useTaskTranslation(task: Task | null, lang: Lang) {
 
         const translated: Pick<Task, 'task_name' | 'issue_description' | 'tech_notes' | 'action_items'> = {
           task_name: translatedName ?? task.task_name,
-          issue_description: translatedIssue ?? task.issue_description,
+          issue_description: translatedIssue,
           tech_notes: translatedTechNotes ?? task.tech_notes,
           action_items: translatedItems,
         }

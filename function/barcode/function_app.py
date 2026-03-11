@@ -179,7 +179,7 @@ def _sync_pdf_warnings_field(task_id: str, is_stale: bool, custom_fields: list,
 _PDF_FIELD_COMPARISONS = [
     ("task_name",        "pdf_task_name",        "task_name"),
     ("property_address", "pdf_property_address", "property_address"),
-    ("issue_description","pdf_issue_description","issue_description"),
+    ("issue_description_raw","pdf_issue_description","issue_description"),
     ("action_items_raw", "pdf_action_items_raw", "action_items"),
     ("start_date_ms",    "pdf_start_date_ms",    "scheduled_date"),
 ]
@@ -231,7 +231,7 @@ def _sync_staleness(task_id: str, clickup_data: dict, entity: dict, cu_headers: 
 def _extract_task_fields(data: dict) -> dict:
     """Normalize a ClickUp task API response into a flat dict for the UI."""
     addr = ""
-    desc = ""
+    desc_raw = ""
     action_items_raw = ""
     start_buffer_hours = 0
     translate_flag = False
@@ -243,7 +243,8 @@ def _extract_task_fields(data: dict) -> dict:
         if name == "Property Address":
             addr = cf.get("value") or ""
         elif name == "Task Issue Description":
-            desc = cf.get("value") or ""
+            val = cf.get("value_richtext")
+            desc_raw = val if isinstance(val, str) else (json.dumps(val) if val else "")
         elif name == "Task Start Buffer":
             start_buffer_hours = int(float(cf.get("value", 0) or 0))
         elif name == "Task Action Items":
@@ -263,6 +264,7 @@ def _extract_task_fields(data: dict) -> dict:
 
     status_obj = data.get("status", {})
     task_status = status_obj.get("status", "") if isinstance(status_obj, dict) else ""
+    issue_description = parse_quill_delta(desc_raw) if desc_raw else []
     action_items = parse_quill_delta(action_items_raw) if action_items_raw else []
 
     attachments = [
@@ -279,7 +281,8 @@ def _extract_task_fields(data: dict) -> dict:
         "task_id": data.get("id"),
         "task_name": data.get("name", ""),
         "property_address": addr,
-        "issue_description": desc,
+        "issue_description": issue_description,
+        "issue_description_raw": desc_raw,
         "action_items_raw": action_items_raw,
         "action_items": action_items,
         "start_date_ms": str(data.get("start_date") or ""),
@@ -411,7 +414,8 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
                     addr = cf.get("value") or ""
 
                 if cf["name"] == "Task Issue Description":
-                    desc = cf.get("value") or ""
+                    val = cf.get("value_richtext")
+                    desc = val if isinstance(val, str) else (json.dumps(val) if val else "")
 
                 if cf["name"] == "Task Start Buffer":
                     start_buffer = int(float(cf.get("value", 0) or 0))
@@ -541,16 +545,7 @@ def event_grid_blob_trigger_send_email(pdfBlob: func.InputStream):
             },
             "content": {
                 "subject": f"Maintenance Task PDF - {task_id}",
-                "plainText": f"Maintenance task PDF generated at {datetime.datetime.now()}"
-                # , "html": f"""
-                # <html>
-                #     <body>
-                #         <h2>Maintenance Task Report</h2>
-                #         <p><strong>Task ID:</strong> {task_id}</p>
-                #         <p>Generated at: {datetime.datetime.now()}</p>
-                #         <p>Please see attached PDF.</p>
-                #     </body>
-                # </html>"""
+                "plainText": " ",
             },
             "attachments": [
                 {
@@ -653,7 +648,8 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
             "task_id": task_id,
             "task_name": entity.get("task_name", ""),
             "property_address": entity.get("property_address", ""),
-            "issue_description": entity.get("issue_description", ""),
+            "issue_description": parse_quill_delta(entity.get("issue_description", "")),
+            "issue_description_raw": entity.get("issue_description", ""),
             "action_items": parse_quill_delta(entity.get("action_items_raw", "")),
             "start_date_ms": entity.get("start_date_ms", ""),
             "start_buffer_hours": entity.get("start_buffer_hours", 0),
@@ -737,6 +733,7 @@ def _handle_task_get(req: func.HttpRequest, task_id: str) -> func.HttpResponse:
 
     response_data = {**fields, **tech_fields, "cache_stale": cache_stale, "pdf_stale_fields": pdf_stale_fields}
     response_data.pop("action_items_raw", None)
+    response_data.pop("issue_description_raw", None)
     response_data.pop("contractor_notes", None)
     response_data.pop("contractor_notes_field_id", None)
 
@@ -989,7 +986,8 @@ def http_trigger_regenerate_pdf(req: func.HttpRequest) -> func.HttpResponse:
         if name == "Property Address":
             addr = cf.get("value") or ""
         elif name == "Task Issue Description":
-            desc = cf.get("value") or ""
+            val = cf.get("value_richtext")
+            desc = val if isinstance(val, str) else (json.dumps(val) if val else "")
         elif name == "Task Start Buffer":
             start_buffer = int(float(cf.get("value", 0) or 0))
         elif name == "Task Action Items":

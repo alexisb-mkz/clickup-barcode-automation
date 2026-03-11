@@ -16,10 +16,16 @@ export default function TaskHeader({ task }: Props) {
       {task.property_address && task.task_name && (
         <p className="text-sm text-gray-500">{task.task_name}</p>
       )}
-      {task.issue_description && (
+      {task.issue_description.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-100">
           <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1">{t('issue', lang)}</p>
-          <p className="text-sm text-gray-700">{task.issue_description}</p>
+          <div className="text-sm text-gray-700 space-y-0.5">
+            {task.issue_description.map((seg, i) => (
+              <p key={i}>
+                {seg.type === 'bullet' ? `• ${seg.text}` : seg.type === 'ordered' ? `${i + 1}. ${seg.text}` : seg.text}
+              </p>
+            ))}
+          </div>
         </div>
       )}
       <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">

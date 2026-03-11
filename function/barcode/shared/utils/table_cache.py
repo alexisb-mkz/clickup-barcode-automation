@@ -36,7 +36,7 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str, update
     so that snapshot_written_at reflects only actual PDF generation events.
     """
     addr = ""
-    desc = ""
+    desc_raw = ""
     action_items_raw = ""
     start_buffer_hours = 0
     translate_flag = False
@@ -47,7 +47,8 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str, update
         if name == "Property Address":
             addr = cf.get("value") or ""
         elif name == "Task Issue Description":
-            desc = cf.get("value") or ""
+            val = cf.get("value_richtext")
+            desc_raw = val if isinstance(val, str) else (json.dumps(val) if val else "")
         elif name == "Task Start Buffer":
             start_buffer_hours = int(float(cf.get("value", 0) or 0))
         elif name == "Task Action Items":
@@ -65,7 +66,7 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str, update
         "PartitionKey": PARTITION_KEY,
         "RowKey": task_id,
         "property_address": addr,
-        "issue_description": desc,
+        "issue_description": desc_raw,
         "action_items_raw": action_items_raw,
         "start_date_ms": str(task_data.get("start_date") or ""),
         "start_buffer_hours": start_buffer_hours,
@@ -79,7 +80,7 @@ def write_task_snapshot(task_id: str, task_data: dict, pdf_blob_url: str, update
         # Store field values as of PDF generation so GET can diff against them
         entity["pdf_task_name"] = task_data.get("name", "")
         entity["pdf_property_address"] = addr
-        entity["pdf_issue_description"] = desc
+        entity["pdf_issue_description"] = desc_raw
         entity["pdf_action_items_raw"] = action_items_raw
         entity["pdf_start_date_ms"] = str(task_data.get("start_date") or "")
     if contractor_notes_field_id:
@@ -126,7 +127,7 @@ def seed_pdf_snapshot_fields(task_id: str, fields: dict) -> None:
         "RowKey": task_id,
         "pdf_task_name":         fields.get("task_name", ""),
         "pdf_property_address":  fields.get("property_address", ""),
-        "pdf_issue_description": fields.get("issue_description", ""),
+        "pdf_issue_description": fields.get("issue_description_raw", ""),
         "pdf_action_items_raw":  fields.get("action_items_raw", ""),
         "pdf_start_date_ms":     fields.get("start_date_ms", ""),
     }

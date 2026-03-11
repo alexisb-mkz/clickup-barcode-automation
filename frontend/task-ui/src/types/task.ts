@@ -14,7 +14,7 @@ export interface Task {
   task_id: string
   task_name: string
   property_address: string
-  issue_description: string
+  issue_description: ActionItem[]
   action_items: ActionItem[]
   start_date_ms: string
   start_buffer_hours: number

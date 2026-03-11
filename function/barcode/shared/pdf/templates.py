@@ -153,11 +153,19 @@ class MaintenanceRequestTemplate:
     def build_issue_section(self, issue_description, action_items, translate_fn=None):
         """Build the issue description section"""
         elements = []
-        
+
         t = translate_fn if translate_fn else (lambda x: x)
-        
+
         elements.append(Paragraph(f"<b>{t('Issue Description')}</b>", self.styles.section_header))
-        elements.append(Paragraph(t(issue_description), self.styles.body))
+        desc_segments = parse_quill_delta(issue_description)
+        for i, seg in enumerate(desc_segments):
+            text = t(seg["text"])
+            if seg["type"] == "bullet":
+                elements.append(Paragraph(f"• {text}", self.styles.body))
+            elif seg["type"] == "ordered":
+                elements.append(Paragraph(f"{i + 1}. {text}", self.styles.body))
+            else:
+                elements.append(Paragraph(text, self.styles.body))
         if action_items:
             elements.append(Spacer(1, 0.1 * inch))
             elements.append(Paragraph(f"<b>{t('Action Items')}</b>", self.styles.section_header))
