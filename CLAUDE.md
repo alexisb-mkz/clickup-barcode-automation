@@ -74,7 +74,7 @@ SWA /task/{id}
 ### Data Merge Strategy
 
 The `GET /api/task/{id}` response merges two sources:
-- **ClickUp** (always fetched first): `task_name`, `property_address`, `issue_description`, `action_items`, `start_date_ms`, `start_buffer_hours`, `task_status`, `translate_flag`, `attachments`, `date_updated`
+- **ClickUp** (always fetched first): `task_name`, `property_address`, `issue_description` (parsed `ActionItem[]`), `action_items` (parsed `ActionItem[]`), `start_date_ms`, `start_buffer_hours`, `task_status`, `translate_flag`, `attachments`, `date_updated`
 - **Table Storage** (tech-writable, MERGE upsert never overwrites ClickUp fields): `arrival_date_iso`, `completion_status`, `tech_notes`, `last_ui_update_at`
 
 The response also includes `snapshot_written_at` (when PDF was last generated) and `pdf_stale_fields` (list of field keys that differ from their values at PDF generation time).
@@ -95,7 +95,7 @@ All writes use `UpdateMode.MERGE` (`upsert_entity`). This means:
 
 ### PDF Staleness Detection
 
-`pdf_*` fields (`pdf_task_name`, `pdf_property_address`, `pdf_issue_description`, `pdf_action_items_raw`, `pdf_start_date_ms`) store the ClickUp field values frozen at PDF generation time. On every GET, `_handle_task_get` diffs the current ClickUp values against these `pdf_*` fields to produce `pdf_stale_fields`.
+`pdf_*` fields (`pdf_task_name`, `pdf_property_address`, `pdf_issue_description`, `pdf_action_items_raw`, `pdf_start_date_ms`) store the ClickUp field values frozen at PDF generation time. `pdf_issue_description` stores the raw Quill Delta JSON string (same as `issue_description_raw`), not the parsed segments. On every GET, `_handle_task_get` diffs current `issue_description_raw` and `action_items_raw` strings against these `pdf_*` fields via `_compute_stale_fields` to produce `pdf_stale_fields`.
 
 Staleness side effects (only when `snapshot_written_at` is set and `pdf_*` baseline exists):
 1. **`pdf-stale` tag** — added to the ClickUp task via `_sync_pdf_stale_tag()`; removed after regeneration
@@ -160,7 +160,7 @@ Similarly, `arrival_date_iso` always syncs to ClickUp's top-level `start_date` f
 - `setLangAuto()` — auto-detection from `task.translate_flag`, does **not** write to `localStorage`
 - `hasStoredLangPreference()` — guards against overwriting an explicit user choice
 
-Translation is lazy-fetched via `useTaskTranslation` hook calling `POST /api/translate`. The hook translates `task_name`, `issue_description`, `tech_notes`, and all `action_items` text in a single batched request. `property_address` is intentionally excluded. Results are cached in-memory keyed on `task_id + snapshot_written_at`.
+Translation is lazy-fetched via `useTaskTranslation` hook calling `POST /api/translate`. The hook translates `task_name`, `tech_notes`, all `issue_description` segment texts, and all `action_items` segment texts in a single batched request — packed as `[task_name, tech_notes, ...issueTexts, ...actionTexts]` and unpacked by index on return. `property_address` is intentionally excluded. Results are cached in-memory keyed on `task_id + snapshot_written_at`.
 
 All UI strings use the `t(key, lang)` helper from `src/utils/i18n.ts`.
 
@@ -180,6 +180,12 @@ Source of truth is always `task.start_date_ms` (from ClickUp). After saving, the
 
 ### Quill Delta Parsing
 
-ClickUp stores rich text as Quill Delta JSON (`value_richtext` field). `parse_quill_delta()` in `shared/utils/helpers.py` converts this to `[{text, type}]` segments where `type` is `"bullet"`, `"ordered"`, or `None`. The same parsing logic runs in both the PDF generator (Python) and the React frontend (the API returns pre-parsed `action_items` array).
+ClickUp stores rich text as Quill Delta JSON (`value_richtext` field). `parse_quill_delta()` in `shared/utils/helpers.py` converts this to `[{text, type}]` segments where `type` is `"bullet"`, `"ordered"`, or `None`. The same parsing logic runs in both the PDF generator (Python) and the React frontend (the API returns pre-parsed arrays).
+
+Both `issue_description` and `action_items` are Quill Delta fields. Both are read from `value_richtext`, stored raw in Table Storage, and returned to the frontend as pre-parsed `ActionItem[]` arrays. `issue_description_raw` and `action_items_raw` are internal fields stripped from the GET response before it is sent to the frontend. `pdf_issue_description` stores the raw richtext JSON frozen at PDF generation time for staleness comparison.
 
 The ClickUp "Warnings" custom field is written as a Quill Delta with `advanced-banner-color: "red-strong"` attributes. Each line is a text insert followed by a newline insert carrying the banner attributes. Bullet lines additionally carry `"list": {"list": "bullet"}`. Block IDs are generated with `f"block-{uuid.uuid4()}"`.
+
+### Email
+
+The ACS email sent on PDF generation (`event_grid_blob_trigger_send_email`) contains only the PDF attachment — the message body is a single space (`plainText: " "`). No additional content is included in the email body.

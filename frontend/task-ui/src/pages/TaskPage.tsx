@@ -82,6 +82,7 @@ export default function TaskPage() {
         <ActionItemList items={displayTask.action_items} />
         <PdfLink
           taskId={taskId!}
+          snapshotWrittenAt={task.snapshot_written_at}
           pdfStaleFields={task.pdf_stale_fields ?? []}
           onRegenerated={(snapshotWrittenAt) =>
             setTask((prev) => prev ? { ...prev, snapshot_written_at: snapshotWrittenAt, pdf_stale_fields: [] } : prev)

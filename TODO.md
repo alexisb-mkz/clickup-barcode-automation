@@ -355,4 +355,18 @@ Recommended: **task comment** for the initial implementation since it requires n
 # [X] 14. CHANGE DATE PCIKER TO BE 24 HRS and TRANSLATED MONTHS
 
 
-# [ ] 15. Ensure all task data, including attachments, is indexed and stored so it can be searched using AI search
+# [X] 15. Issue description as rich text + email body cleanup
+
+**Where:** `function/barcode/function_app.py`, `function/barcode/shared/utils/table_cache.py`, `function/barcode/shared/pdf/templates.py`, `frontend/task-ui/src/types/task.ts`, `frontend/task-ui/src/components/TaskHeader.tsx`, `frontend/task-ui/src/hooks/useTaskTranslation.ts`
+
+"Task Issue Description" ClickUp field changed to rich text type. Updated all three extraction paths (`_extract_task_fields`, createpdf loop, regenerate loop) to read `value_richtext` instead of `value`, serialize to JSON string as `issue_description_raw`, and parse via `parse_quill_delta` into `ActionItem[]` segments. `issue_description_raw` is stripped from GET responses (same as `action_items_raw`). Table Storage stores raw richtext under the `issue_description` key; `pdf_issue_description` baseline also stores raw richtext for staleness diffing.
+
+PDF `build_issue_section` in `templates.py` now calls `parse_quill_delta` internally and renders segments with bullet/ordered/plain formatting (same pattern as `build_action_item_elements`).
+
+Frontend `Task` type changed to `issue_description: ActionItem[]`. `TaskHeader` renders segments with bullet prefixes. `useTaskTranslation` translates each segment's text individually (batched with action_items in order: `[task_name, tech_notes, ...issueTexts, ...actionTexts]`).
+
+Email body set to `plainText: " "` — only the PDF attachment is sent, no message body content.
+
+---
+
+# [ ] 16. Ensure all task data, including attachments, is indexed and stored so it can be searched using AI search

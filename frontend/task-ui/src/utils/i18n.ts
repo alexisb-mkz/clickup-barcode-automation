@@ -20,6 +20,7 @@ const strings = {
   attachments:       { en: 'Attachments',                                              zh: '附件' },
   viewWorkOrderPdf:  { en: 'View Work Order PDF',                                      zh: '查看工单 PDF' },
   opensInNewTab:     { en: 'Opens in new tab',                                         zh: '在新标签页打开' },
+  pdfGeneratedAt:    { en: 'Generated',                                                zh: '生成时间' },
   saving:            { en: 'Saving...',                                                zh: '保存中...' },
   saved:             { en: '✓ Saved',                                                  zh: '✓ 已保存' },
   errorPrefix:       { en: 'Error',                                                    zh: '错误' },

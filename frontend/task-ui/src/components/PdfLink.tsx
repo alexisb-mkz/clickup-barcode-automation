@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { getPdfUrl, regeneratePdf } from '../api/taskApi'
 import { useLanguage } from '../contexts/LanguageContext'
 import { t, type StringKey } from '../utils/i18n'
+import { formatDisplayDate } from '../utils/dateUtils'
 import type { Lang } from '../contexts/LanguageContext'
 
 const FIELD_LABEL_KEYS: Record<string, StringKey> = {
@@ -19,11 +20,12 @@ function fieldLabel(key: string, lang: Lang): string {
 
 interface Props {
   taskId: string
+  snapshotWrittenAt: string | null
   pdfStaleFields: string[]
   onRegenerated: (snapshotWrittenAt: string) => void
 }
 
-export default function PdfLink({ taskId, pdfStaleFields, onRegenerated }: Props) {
+export default function PdfLink({ taskId, snapshotWrittenAt, pdfStaleFields, onRegenerated }: Props) {
   const { lang } = useLanguage()
   const [regenerating, setRegenerating] = useState(false)
   const [regenSuccess, setRegenSuccess] = useState(false)
@@ -63,6 +65,11 @@ export default function PdfLink({ taskId, pdfStaleFields, onRegenerated }: Props
         <div>
           <p className="text-sm font-medium text-blue-600">{t('viewWorkOrderPdf', lang)}</p>
           <p className="text-xs text-gray-400">{t('opensInNewTab', lang)}</p>
+          {snapshotWrittenAt && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              {t('pdfGeneratedAt', lang)}: {formatDisplayDate(snapshotWrittenAt, lang)}
+            </p>
+          )}
         </div>
       </button>
 
