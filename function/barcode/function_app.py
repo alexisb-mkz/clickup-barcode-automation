@@ -364,6 +364,21 @@ def http_trigger_task_parse(req: func.HttpRequest) -> func.HttpResponse:
                 except Exception as cache_err:
                     logging.warning(f"Table Storage snapshot failed (non-fatal): {cache_err}")
 
+                # Clear pdf-stale indicators now that a fresh PDF has been generated
+                _sync_pdf_stale_tag(
+                    id,
+                    is_stale=False,
+                    existing_tags=data.get("tags", []),
+                    cu_headers=headers
+                )
+                _sync_pdf_warnings_field(
+                    id,
+                    is_stale=False,
+                    custom_fields=data.get("custom_fields", []),
+                    stale_fields=[],
+                    cu_headers=headers
+                )
+
             except Exception as e:
                 logging.error(f"Failed to write blob: {str(e)}")
                 return func.HttpResponse(f"Blob write failed: {str(e)}", status_code=500)

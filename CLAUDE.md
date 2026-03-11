@@ -96,10 +96,14 @@ Staleness side effects (only when `snapshot_written_at` is set and `pdf_*` basel
 When a baseline doesn't exist (`pdf_task_name is None`), `seed_pdf_snapshot_fields()` is called to initialise it from current values, and tag/warning sync is skipped for that GET.
 
 Regeneration can be triggered two ways:
-- **Technician portal** — `POST /api/task/{task_id}/regenerate-pdf` endpoint
-- **ClickUp** — re-adding the `createpdf` tag triggers `http_trigger_task_parse`, which regenerates and calls `write_task_snapshot(update_snapshot_time=True)`, clearing the stale state
+- **Technician portal** — `POST /api/task/{task_id}/regenerate-pdf` endpoint; clears tag + Warnings field immediately after blob upload
+- **ClickUp tag** — re-adding the `createpdf` tag triggers `http_trigger_task_parse`; after blob upload and `write_task_snapshot`, it calls `_sync_pdf_stale_tag` and `_sync_pdf_warnings_field` to clear indicators immediately without waiting for a GET
 
-The frontend `PdfLink` component shows a yellow warning with the changed field names when `pdf_stale_fields.length > 0`. Background polling (`useTask.ts`, 30s interval, paused when tab hidden) refreshes task data so the warning appears without a manual page reload.
+Both paths clear the ClickUp indicators synchronously so the warning disappears in ClickUp as soon as the PDF is sent, regardless of whether the contractor UI is open.
+
+**Race condition guard:** when `_handle_task_get` is about to set the warning (`is_stale=True`), it re-reads the Table Storage entity to check if `snapshot_written_at` advanced since the entity was first read. If it changed, a concurrent regeneration completed mid-request — `is_stale` is flipped to `False` and the warning is left cleared rather than re-set.
+
+The frontend `PdfLink` component shows a yellow warning with the changed field names when `pdf_stale_fields.length > 0`. Background polling (`useTask.ts`, 30s interval, paused when tab hidden) refreshes task data so the warning appears without a manual page reload. After every successful save, `useTaskUpdate` also triggers an immediate GET refresh so the UI reflects the latest server state without waiting for the next poll.
 
 ### PUT Response
 
